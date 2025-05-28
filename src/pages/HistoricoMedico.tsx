@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Calendar, Search, Filter, FileText, User, PlusCircle } from 'lucide-react';
+import { collection, getDocs, doc, updateDoc  } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { getStorage } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../config/firebase'; // ajuste o caminho
+
 
 interface RegistroMedico {
-  id: number;
+  id: string;
   tipo: 'consulta' | 'exame' | 'cirurgia' | 'vacinacao';
   data: string;
   titulo: string;
@@ -10,10 +16,10 @@ interface RegistroMedico {
   medico: string;
   especialidade: string;
   instituicao: string;
-  documentos?: { id: number; nome: string; tipo: string }[];
+  documentos?: { id: string; nome: string; tipo: string; url: string}[];
 }
 
-const registrosMedicos: RegistroMedico[] = [
+/* const registrosMedicos: RegistroMedico[] = [
   {
     id: 1,
     tipo: 'consulta',
@@ -67,27 +73,132 @@ const registrosMedicos: RegistroMedico[] = [
       { id: 5, nome: 'Receita - Metformina', tipo: 'pdf' },
     ],
   },
-];
+]; */
 
 const HistoricoMedico: React.FC = () => {
+
   const [filtroTipo, setFiltroTipo] = useState<string>('todos');
   const [busca, setBusca] = useState<string>('');
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [registros, setRegistros] = useState<RegistroMedico[]>([]);
+  const [registroSelecionado, setRegistroSelecionado] = useState<RegistroMedico | null>(null);
+  const [modalAberto, setModalAberto] = useState(false);
+
+
+  // Carrega dados do Firestore
+  useEffect(() => {
+    const buscarRegistros = async () => {
+      try {
+        const snapshot = await getDocs(collection(db, 'historicoMedico'));
+        const dados = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        console.log('Registros encontrados:', dados);
+        setRegistros(dados as RegistroMedico[]);
+      } catch (erro) {
+        console.error('Erro ao buscar registros médicos:', erro);
+      } finally {
+        setCarregando(false);
+      }
+    };
   
-  const registrosFiltrados = registrosMedicos.filter(registro => {
+    buscarRegistros();
+  }, []);
+  
+  const abrirModal = (registro: RegistroMedico) => {
+    setRegistroSelecionado(registro);
+    setModalAberto(true);
+  };
+
+  const handleUploadArquivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !registroSelecionado) return;
+  
+    try {
+      const caminho = `documentos/${registroSelecionado.id}/${file.name}`;
+      const arquivoRef = ref(storage, caminho);
+      await uploadBytes(arquivoRef, file);
+      const url = await getDownloadURL(arquivoRef);
+  
+      const novoDocumento = {
+        id: Date.now().toString(), // string para evitar conflitos
+        nome: file.name,
+        tipo: file.type.includes('pdf') ? 'pdf' : 'imagem',
+        url,
+      };
+  
+      const novosDocs = [...(registroSelecionado.documentos || []), novoDocumento];
+  
+      // Atualiza no Firestore
+      const registroRef = doc(db, 'historicoMedico', registroSelecionado.id);
+      await updateDoc(registroRef, { documentos: novosDocs });
+  
+      // Atualiza no estado local
+      const registroAtualizado = {
+        ...registroSelecionado,
+        documentos: novosDocs,
+      };
+      setRegistroSelecionado(registroAtualizado);
+      setRegistros((prev) =>
+        prev.map((r) => (r.id === registroSelecionado.id ? registroAtualizado : r))
+      );
+  
+      alert('Arquivo enviado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao enviar arquivo:', error);
+      alert('Erro ao enviar arquivo. Tente novamente.');
+    }
+  };
+  
+
+  const salvarAlteracoes = async () => {
+    if (!registroSelecionado) return;
+  
+    try {
+      const registroRef = doc(db, 'historicoMedico', registroSelecionado.id);
+      
+      // cria uma cópia do objeto sem o campo `id` (Firestore não aceita esse campo no update)
+      const { id, ...dadosParaSalvar } = registroSelecionado;
+  
+      await updateDoc(registroRef, dadosParaSalvar);
+      console.log('Registro atualizado com sucesso!');
+  
+      // Atualiza localmente
+      setRegistros((prev) =>
+        prev.map((r) => (r.id === registroSelecionado.id ? registroSelecionado : r))
+      );
+  
+      setModalAberto(false);
+    } catch (error) {
+      console.error('Erro ao salvar alterações:', error);
+      alert('Erro ao salvar alterações. Tente novamente.');
+    }
+  };
+  
+
+  const registrosFiltrados = registros.filter((registro) => {
     // Filtro por tipo
     if (filtroTipo !== 'todos' && registro.tipo !== filtroTipo) return false;
-    
-    // Filtro por busca (título, médico, especialidade ou instituição)
-    if (busca && !registro.titulo.toLowerCase().includes(busca.toLowerCase()) &&
-        !registro.medico.toLowerCase().includes(busca.toLowerCase()) &&
-        !registro.especialidade.toLowerCase().includes(busca.toLowerCase()) &&
-        !registro.instituicao.toLowerCase().includes(busca.toLowerCase())) {
-      return false;
+  
+    // Filtro por texto de busca
+    if (busca.trim()) {
+      const textoBusca = busca.toLowerCase();
+      const campos = [
+        registro.titulo,
+        registro.medico,
+        registro.especialidade,
+        registro.instituicao,
+      ];
+      const emTexto = campos.map((campo) => campo?.toLowerCase() || '').join(' ');
+      return emTexto.includes(textoBusca);
     }
-    
+  
     return true;
   });
   
+  
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
@@ -171,14 +282,102 @@ const HistoricoMedico: React.FC = () => {
                       </div>
                       <p className="text-sm text-gray-600 mt-2">{registro.descricao}</p>
                     </div>
+
+                    {registroSelecionado?.documentos?.map((doc) => (
+                      <div key={doc.id}>
+                        <a href={doc.url} target="_blank" className="text-blue-600 underline">
+                          {doc.nome}
+                        </a>
+                      </div>
+                    ))}
                   </div>
                   
                   <div className="text-right mt-2 md:mt-0">
-                    <button className="text-primary-600 hover:text-primary-700 text-sm font-medium">
-                      Ver detalhes
-                    </button>
+                  <button
+                    onClick={() => abrirModal(registro)}
+                    className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Ver detalhes
+                  </button>
                   </div>
                 </div>
+
+                {modalAberto && registroSelecionado && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white p-6 rounded-lg w-full max-w-xl space-y-4 relative">
+                      <button
+                        onClick={() => setModalAberto(false)}
+                        className="absolute top-2 right-2 text-gray-500 hover:text-red-500"
+                      >
+                        ×
+                      </button>
+
+                      <h2 className="text-xl font-bold">Editar Registro</h2>
+                      <p>Titulo</p>
+                      <div className="grid grid-cols-1 gap-4">
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          value={registroSelecionado.titulo}
+                          onChange={(e) =>
+                            setRegistroSelecionado({ ...registroSelecionado, titulo: e.target.value })
+                          }
+                        />
+                        <p>Medico</p>
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          value={registroSelecionado.medico}
+                          onChange={(e) =>
+                            setRegistroSelecionado({ ...registroSelecionado, medico: e.target.value })
+                          }
+                        />
+                        <p>Especialidade</p>
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          value={registroSelecionado.especialidade}
+                          onChange={(e) =>
+                            setRegistroSelecionado({ ...registroSelecionado, especialidade: e.target.value })
+                          }
+                        />
+                        <p>Data</p>
+                        <input
+                          type="date"
+                          className="border p-2 rounded"
+                          value={registroSelecionado.data}
+                          onChange={(e) =>
+                            setRegistroSelecionado({ ...registroSelecionado, data: e.target.value })
+                          }
+                        />
+                        <p className=''>Descrição</p>
+                        <textarea
+                          className="border p-2 rounded"
+                          value={registroSelecionado.descricao}
+                          onChange={(e) =>
+                            setRegistroSelecionado({ ...registroSelecionado, descricao: e.target.value })
+                          }
+                        />
+                        <p className=''>Arquivo</p>
+                        <input
+                          type="file"
+                          accept="application/pdf,image/jpeg,image/png"
+                          onChange={handleUploadArquivo}
+                        />
+
+                      </div>
+
+                      <button
+                        onClick={salvarAlteracoes}
+                        className="mt-4 w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
+                      >
+                        Salvar alterações
+                      </button>
+
+                    </div>
+                  </div>
+                )}
+
                 
                 <div className="mt-4 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

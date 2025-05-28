@@ -124,6 +124,39 @@ const Agendamentos: React.FC = () => {
     }
   };
 
+  const marcarComoRealizado = async (agendamento: Agendamento) => {
+    try {
+      const refAgendamento = doc(db, 'agendamentos', agendamento.id);
+      await updateDoc(refAgendamento, { status: 'realizado' });
+  
+      await addDoc(collection(db, 'historicoMedico'), {
+        tipo: agendamento.tipo === 'procedimento' ? 'cirurgia' : agendamento.tipo,
+        data: agendamento.data,
+        titulo: agendamento.titulo,
+        descricao: agendamento.observacoes,
+        medico: agendamento.profissional,
+        especialidade: agendamento.especialidade,
+        instituicao: agendamento.local,
+        documentos: [], // pode adaptar se houver arquivos associados
+      });
+  
+      setModalMensagem('Agendamento marcado como realizado e salvo no histórico médico!');
+      setMostrarModalMensagem(true);
+      setTimeout(() => {
+        setMostrarModalMensagem(false);
+      }, 3000);
+      buscarAgendamentos(); // recarrega a lista
+    } catch (error) {
+      console.error('Erro ao marcar como realizado:', error);
+      setModalMensagem('Erro ao registrar como realizado. Tente novamente.');
+      setMostrarModalMensagem(true);
+      setTimeout(() => {
+        setMostrarModalMensagem(false);
+      }, 3000);
+    }
+  };
+  
+
   const atualizarStatus = async (id: string, novoStatus: 'confirmado' | 'cancelado') => {
     try {
       const ref = doc(db, 'agendamentos', id);
@@ -397,6 +430,13 @@ const Agendamentos: React.FC = () => {
                           }}
                         >
                           ✎ Editar
+                        </button>
+                        <button
+                          onClick={() => marcarComoRealizado(agendamento)}
+                          className="inline-flex items-center justify-center px-3 py-1.5 border border-blue-600 text-blue-700 hover:bg-blue-50 rounded-lg text-sm transition-colors"
+                        >
+                          <CheckCircle size={14} className="mr-1" />
+                          Realizado
                         </button>
                       </div>
                     )}

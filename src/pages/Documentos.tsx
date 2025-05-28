@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
-import { Search, Filter, Upload, FileText, FilePlus, Folder, ChevronDown, ChevronRight } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+
+import { ref, uploadBytesResumable, getDownloadURL} from 'firebase/storage';
+import { db, storage } from '../config/firebase';
+import { ChevronDown, ChevronRight, FilePlus, FileText, Filter, Folder, Search, Upload } from 'lucide-react';
+import {addDoc , Timestamp , getDocs , collection} from 'firebase/firestore';
 
 interface Documento {
-  id: number;
+  id: string;
   nome: string;
   tipo: string;
   categoria: string;
@@ -10,9 +14,10 @@ interface Documento {
   tamanho: string;
   origem: string;
   descricao?: string;
+  url: string;
 }
 
-const documentos: Documento[] = [
+/* const documentos: Documento[] = [
   {
     id: 1,
     nome: 'Exame de Sangue - Hemograma',
@@ -80,7 +85,7 @@ const documentos: Documento[] = [
     tamanho: '0.7 MB',
     origem: 'Posto de Saúde Central',
   },
-];
+]; */
 
 const Documentos: React.FC = () => {
   const [busca, setBusca] = useState<string>('');
@@ -91,7 +96,93 @@ const Documentos: React.FC = () => {
     'Atestados': false,
     'Vacinas': false,
   });
-  
+  const [modalAberto, setModalAberto] = useState(false);
+const [arquivo, setArquivo] = useState<File | null>(null);
+const [progresso, setProgresso] = useState(0);
+const [nome, setNome] = useState('');
+const [origem, setOrigem] = useState('');
+const [descricao, setDescricao] = useState('');
+const [categoria, setCategoria] = useState('');
+const [documentosSalvos, setDocumentosSalvos] = useState<Documento[]>([]);
+
+useEffect(() => {
+  buscarDocumentos();
+}, []);
+
+
+const handleUpload = () => {
+  if (!arquivo) return;
+
+  const storageRef = ref(storage, `documentos/${arquivo.name}`);
+  const uploadTask = uploadBytesResumable(storageRef, arquivo);
+
+  uploadTask.on(
+    "state_changed",
+    (snapshot) => {
+      const progressoAtual = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+      setProgresso(progressoAtual);
+    },
+    (error) => {
+      console.error("Erro ao fazer upload:", error);
+    },
+    async () => {
+      try {
+        const url = await getDownloadURL(uploadTask.snapshot.ref);
+
+        // Cria os dados do documento
+        const documentoData = {
+          nome: arquivo.name,
+          tipo: arquivo.type.split("/")[1]?.toUpperCase() || "PDF",
+          categoria: "Exames", // Pode ser dinâmico
+          data: new Date().toLocaleDateString("pt-BR"),
+          tamanho: `${(arquivo.size / 1024 / 1024).toFixed(1)} MB`,
+          origem: "Usuário", // Pode ser substituído por input
+          descricao: "", // Opcional
+          url, // URL do arquivo no storage
+          criadoEm: Timestamp.now(),
+        };
+
+        // Salva no Firestore
+        await addDoc(collection(db, "documentos"), documentoData);
+
+        console.log("Documento salvo com sucesso!");
+      } catch (err) {
+        console.error("Erro ao salvar no Firestore:", err);
+      }
+
+      setModalAberto(false);
+      setArquivo(null);
+      setProgresso(0);
+    }
+  );
+};
+
+const visualizarDocumento = (url: string) => {
+  window.open(url, '_blank');
+};
+
+const baixarDocumento = (url: string, nome: string) => {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = nome;
+  link.target = '_blank';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+
+
+const buscarDocumentos = async () => {
+  const querySnapshot = await getDocs(collection(db, 'documentos'));
+  const docs: Documento[] = querySnapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  })) as Documento[];
+  setDocumentosSalvos(docs);
+};
+
+
   const toggleCategoria = (categoria: string) => {
     setCategoriaExpandida({
       ...categoriaExpandida,
@@ -99,9 +190,9 @@ const Documentos: React.FC = () => {
     });
   };
   
-  const categorias = [...new Set(documentos.map(doc => doc.categoria))];
+  const categorias = [...new Set(documentosSalvos.map(doc => doc.categoria))];
   
-  const documentosFiltrados = documentos.filter(doc => {
+  const documentosFiltrados = documentosSalvos.filter(doc => {
     // Filtro por categoria
     if (categoriaSelecionada !== 'todas' && doc.categoria !== categoriaSelecionada) return false;
     
@@ -125,12 +216,83 @@ const Documentos: React.FC = () => {
             <Folder size={16} className="mr-2" />
             Nova Pasta
           </button>
-          <button className="inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+          <button
+            onClick={() => setModalAberto(true)}
+            className="inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+          >
             <Upload size={16} className="mr-2" />
             Enviar Documento
           </button>
         </div>
       </div>
+
+      {modalAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-xl shadow-lg p-6 w-full max-w-md">
+            <h2 className="text-lg font-semibold mb-4">Enviar Documento</h2>
+            
+            <input
+              type="text"
+              placeholder="Nome do documento"
+              value={nome}
+              onChange={(e) => setNome(e.target.value)}
+              className="mb-2 w-full border border-gray-300 rounded px-3 py-2"
+            />
+            <input
+              type="text"
+              placeholder="Origem"
+              value={origem}
+              onChange={(e) => setOrigem(e.target.value)}
+              className="mb-2 w-full border border-gray-300 rounded px-3 py-2"
+            />
+            <textarea
+              placeholder="Descrição"
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value)}
+              className="mb-2 w-full border border-gray-300 rounded px-3 py-2"
+            />
+            <input
+              type="text"
+              placeholder="Categoria"
+              value={categoria}
+              onChange={(e) => setCategoria(e.target.value)}
+              className="mb-4 w-full border border-gray-300 rounded px-3 py-2"
+            />
+
+            <input
+              type="file"
+              onChange={(e) => setArquivo(e.target.files?.[0] || null)}
+              className="mb-4"
+
+            />
+
+            {progresso > 0 && (
+              <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                <div
+                  className="bg-primary-600 h-2 rounded-full transition-all"
+                  style={{ width: `${progresso}%` }}
+                ></div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setModalAberto(false)}
+                className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUpload}
+                className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700"
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Sidebar com categorias */}
@@ -290,10 +452,10 @@ const Documentos: React.FC = () => {
                           {documento.origem}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <button className="text-primary-600 hover:text-primary-900 mr-3">
+                          <button onClick={() => visualizarDocumento(documento.url)} className="text-primary-600 hover:text-primary-900 mr-3">
                             Visualizar
                           </button>
-                          <button className="text-gray-600 hover:text-gray-900">
+                          <button onClick={() => baixarDocumento(documento.url, documento.nome)} className="text-gray-600 hover:text-gray-900">
                             Baixar
                           </button>
                         </td>
