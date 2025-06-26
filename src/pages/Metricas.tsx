@@ -14,6 +14,7 @@ import {
 
 import { db } from '../config/firebase';
   import { onSnapshot, query, collection, orderBy, addDoc , Timestamp, getDocs} from 'firebase/firestore';
+import { Metrica, MetricaData } from '../interface/interface';
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -28,25 +29,7 @@ interface Registro {
   data: Date;
   observacoes?: string;
 }
-interface MetricaData {
-  data: string;
-  valor: number;
-}
 
-interface Metrica {
-  id: string;
-  nome: string;
-  descricao: string;
-  unidade: string;
-  corGrafico: string;
-  meta?: {
-    min?: number;
-    max?: number;
-    alvo?: number;
-  };
-  registros: MetricaData[];
-  ultimaAtualizacao: string;
-}
 
 /* const metricas: Metrica[] = [
   {

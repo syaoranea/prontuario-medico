@@ -2,95 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Calendar, Clock, MapPin, User, PlusCircle, CheckCircle, XCircle } from 'lucide-react';
 import { addDoc, collection, getDocs, updateDoc, doc  } from 'firebase/firestore';
 import { db } from '../config/firebase';
-
-
-interface Agendamento {
-  id: string;
-  tipo: 'consulta' | 'exame' | 'procedimento';
-  titulo: string;
-  data: string;
-  hora: string;
-  duracao: string;
-  local: string;
-  endereco: string;
-  profissional: string;
-  especialidade: string;
-  observacoes: string;
-  status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado';
-}
-
-/* const agendamentos: Agendamento[] = [
-  {
-    id: 1,
-    tipo: 'consulta',
-    titulo: 'Consulta - Cardiologia',
-    data: '28/06/2025',
-    hora: '14:30',
-    duracao: '30 minutos',
-    local: 'Hospital Santa Lucia',
-    endereco: 'Av. Principal, 123 - Centro',
-    profissional: 'Dr. João Santos',
-    especialidade: 'Cardiologia',
-    observacoes: 'Trazer exames anteriores e lista de medicamentos em uso.',
-    status: 'agendado',
-  },
-  {
-    id: 2,
-    tipo: 'exame',
-    titulo: 'Hemograma Completo',
-    data: '03/07/2025',
-    hora: '08:15',
-    duracao: '15 minutos',
-    local: 'Laboratório Central',
-    endereco: 'Rua das Flores, 456 - Jardim',
-    profissional: '',
-    especialidade: 'Análises Clínicas',
-    observacoes: 'Jejum de 8 horas. Pode beber água.',
-    status: 'confirmado',
-  },
-  {
-    id: 3,
-    tipo: 'consulta',
-    titulo: 'Consulta - Nutrição',
-    data: '15/07/2025',
-    hora: '10:00',
-    duracao: '45 minutos',
-    local: 'Clínica Vida Plena',
-    endereco: 'Rua dos Pássaros, 789 - Boa Vista',
-    profissional: 'Dra. Ana Ferreira',
-    especialidade: 'Nutrição',
-    observacoes: 'Primeira consulta. Trazer exames recentes se houver.',
-    status: 'agendado',
-  },
-  {
-    id: 4,
-    tipo: 'procedimento',
-    titulo: 'Ecocardiograma',
-    data: '10/05/2025',
-    hora: '09:30',
-    duracao: '40 minutos',
-    local: 'Centro de Diagnóstico',
-    endereco: 'Av. Principal, 500 - Centro',
-    profissional: 'Dr. Roberto Lima',
-    especialidade: 'Cardiologia',
-    observacoes: 'Usar roupa confortável. Não é necessário jejum.',
-    status: 'realizado',
-  },
-  {
-    id: 5,
-    tipo: 'consulta',
-    titulo: 'Consulta - Oftalmologia',
-    data: '22/04/2025',
-    hora: '15:45',
-    duracao: '30 minutos',
-    local: 'Clínica Visual',
-    endereco: 'Rua das Acácias, 321 - Jardim',
-    profissional: 'Dra. Márcia Santos',
-    especialidade: 'Oftalmologia',
-    observacoes: 'Trazer óculos atuais se houver.',
-    status: 'cancelado',
-  },
-]; */
+import { Agendamento } from '../interface/interface';
 
 const Agendamentos: React.FC = () => {
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
@@ -274,14 +186,14 @@ const Agendamentos: React.FC = () => {
 
             {/* Formulário */}
             <form onSubmit={handleSalvarAgendamento} className="space-y-4">
-              <input type="text" name="titulo" placeholder="Título" className="input"
+              <input type="text" name="titulo" placeholder="Expecialidade"  className="input"
                 defaultValue={agendamentoEditando?.titulo}
               />
-              <input type="date" name="data" className="input" defaultValue={agendamentoEditando?.data} />
-              <input type="time" name="hora" className="input" defaultValue={agendamentoEditando?.hora} />
-              <input type="text" name="local" className="input" defaultValue={agendamentoEditando?.local} />
-              <input type="text" name="profissional" className="input" defaultValue={agendamentoEditando?.profissional} />
-              <textarea name="observacoes" className="input" defaultValue={agendamentoEditando?.observacoes} />
+              <input type="date" name="data" className="input" placeholder="Dia da Consulta " defaultValue={agendamentoEditando?.data} />
+              <input type="time" name="hora" className="input" placeholder="Hora" defaultValue={agendamentoEditando?.hora} />
+              <input type="text" name="local" className="input" placeholder="Local" defaultValue={agendamentoEditando?.local} />
+              <input type="text" name="profissional" className="input" placeholder="Nome do Medico" defaultValue={agendamentoEditando?.profissional} />
+              <textarea name="observacoes" className="input" placeholder="Observação" defaultValue={agendamentoEditando?.observacoes} />
               <button
                 type="submit"
                 className="w-full py-2 px-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
