@@ -47,3 +47,17 @@ export interface Agendamento {
     observacoes: string;
     status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado';
   }
+
+  export interface Medicamento {
+    id: string;
+    nome: string;
+    dosagem: string;
+    instrucoes: string;
+    frequencia: string;
+    horarios: string[];
+    inicio: string;
+    fim: string | null;
+    estoque: number;
+    medico: string;
+    status: 'ativo' | 'pausado' | 'finalizado';
+  }

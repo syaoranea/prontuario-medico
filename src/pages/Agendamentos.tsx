@@ -13,6 +13,9 @@ const Agendamentos: React.FC = () => {
   const [modalMensagem, setModalMensagem] = useState('');
   const [mostrarModalMensagem, setMostrarModalMensagem] = useState(false);
   const [agendamentoEditando, setAgendamentoEditando] = useState<Agendamento | null>(null);
+  const [mostrarModalTipo, setMostrarModalTipo] = useState(false);
+  const [tipoSelecionado, setTipoSelecionado] = useState<string | null>(null);
+
 
 
   useEffect(() => {
@@ -99,27 +102,60 @@ const Agendamentos: React.FC = () => {
   const handleSalvarAgendamento = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
-    const dados = {
-      titulo: form.titulo.value,
+  
+    // Dados comuns
+    const dadosBase = {
       data: form.data.value,
       hora: form.hora.value,
-      local: form.local.value,
-      profissional: form.profissional.value,
-      observacoes: form.observacoes.value,
-      tipo: 'consulta',
+      tipo: form.tipo.value,
       duracao: '30 minutos',
-      endereco: '',
-      especialidade: '',
       status: 'agendado',
     };
   
+    // Preparar dados específicos por tipo
+    let dados: any = { ...dadosBase };
+  
+    switch (tipoSelecionado) {
+      case 'consulta':
+        dados = {
+          ...dadosBase,
+          titulo: form.titulo.value,          // Nome da especialidade
+          local: form.local.value,
+          profissional: form.profissional.value,
+          observacoes: form.observacoes?.value || '',
+        };
+        break;
+  
+      case 'exame':
+        dados = {
+          ...dadosBase,
+          titulo: form.titulo.value,          // Nome do exame
+          local: form.local.value,            // Laboratório
+          observacoes: form.observacoes?.value || '',
+        };
+        break;
+  
+      case 'procedimento':
+        dados = {
+          ...dadosBase,
+          titulo: form.titulo.value,          // Nome do procedimento
+          local: form.local.value,            // Hospital/Clínica
+          observacoes: form.observacoes?.value || '',
+        };
+        break;
+  
+      default:
+        console.error('Tipo de agendamento inválido');
+        return;
+    }
+  
     try {
       if (agendamentoEditando) {
-        // edição
-        const ref = doc(db, 'agendamentos', agendamentoEditando.id); // cuidado: id precisa ser string
+        // Edição de agendamento existente
+        const ref = doc(db, 'agendamentos', agendamentoEditando.id);
         await updateDoc(ref, dados);
       } else {
-        // novo
+        // Novo agendamento
         await addDoc(collection(db, 'agendamentos'), dados);
       }
   
@@ -128,10 +164,14 @@ const Agendamentos: React.FC = () => {
       setMostrarModal(false);
       setAgendamentoEditando(null);
       form.reset();
+  
+      // Ocultar mensagem após 3 segundos
       setTimeout(() => {
         setMostrarModalMensagem(false);
       }, 3000);
-      buscarAgendamentos?.(); // recarrega os dados, se você estiver usando
+  
+      // Recarregar lista de agendamentos
+      buscarAgendamentos();
     } catch (error) {
       console.error('Erro ao salvar agendamento:', error);
       setModalMensagem('Erro ao salvar. Tente novamente.');
@@ -143,6 +183,7 @@ const Agendamentos: React.FC = () => {
   };
   
   
+  
   return (
     
     <div className="space-y-6">
@@ -152,29 +193,51 @@ const Agendamentos: React.FC = () => {
         <button 
           onClick={() => {
             setAgendamentoEditando(null);
-            setMostrarModal(true);
+            setTipoSelecionado(null); 
+            setMostrarModalTipo(true); // Abre o modal de escolha de tipo
           }}
-          className="mt-4 md:mt-0 inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+          className="mt-4 md:mt-0 inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
+        >
           <PlusCircle size={16} className="mr-2" />
           Novo Agendamento
         </button>
+
       </div>
-      {mostrarModalMensagem && (
+
+       {/* Modal de Escolha de Tipo */}
+       {mostrarModalTipo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg shadow-lg p-6 max-w-sm w-full relative">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center relative">
             <button
-              onClick={() => setMostrarModalMensagem(false)}
-              className="absolute top-2 right-2 text-gray-500 hover:text-gray-700"
+              onClick={() => setMostrarModalTipo(false)}
+              className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
             >
               ✕
             </button>
-            <p className="text-center text-gray-800">{modalMensagem}</p>
+            <h2 className="text-xl font-bold mb-4">Escolha o tipo de agendamento</h2>
+            <div className="space-y-2">
+              {['consulta', 'exame', 'procedimento'].map((tipo) => (
+                <button
+                  key={tipo}
+                  onClick={() => {
+                    setTipoSelecionado(tipo);
+                    setMostrarModalTipo(false);
+                    setMostrarModal(true);
+                  }}
+                  className="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                >
+                  {tipo.charAt(0).toUpperCase() + tipo.slice(1)}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
+
+      {/* Modal do Formulário */}
       {mostrarModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-xl relative">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg relative">
             <button
               onClick={() => setMostrarModal(false)}
               className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
@@ -182,18 +245,44 @@ const Agendamentos: React.FC = () => {
               ✕
             </button>
 
-            <h2 className="text-xl font-bold mb-4">Novo Agendamento</h2>
+            <h2 className="text-xl font-bold mb-4">
+              Novo {tipoSelecionado && tipoSelecionado.charAt(0).toUpperCase() + tipoSelecionado.slice(1)}
+            </h2>
 
-            {/* Formulário */}
             <form onSubmit={handleSalvarAgendamento} className="space-y-4">
-              <input type="text" name="titulo" placeholder="Expecialidade"  className="input"
-                defaultValue={agendamentoEditando?.titulo}
-              />
-              <input type="date" name="data" className="input" placeholder="Dia da Consulta " defaultValue={agendamentoEditando?.data} />
-              <input type="time" name="hora" className="input" placeholder="Hora" defaultValue={agendamentoEditando?.hora} />
-              <input type="text" name="local" className="input" placeholder="Local" defaultValue={agendamentoEditando?.local} />
-              <input type="text" name="profissional" className="input" placeholder="Nome do Medico" defaultValue={agendamentoEditando?.profissional} />
-              <textarea name="observacoes" className="input" placeholder="Observação" defaultValue={agendamentoEditando?.observacoes} />
+              <input type="hidden" name="tipo" value={tipoSelecionado || ''} />
+
+              {/* Campos de cada tipo */}
+              {tipoSelecionado === 'consulta' && (
+                <>
+                  <input type="text" name="titulo" placeholder="Especialidade" className="input" />
+                  <input type="date" name="data" className="input" />
+                  <input type="time" name="hora" className="input" />
+                  <input type="text" name="local" placeholder="Local" className="input" />
+                  <input type="text" name="profissional" placeholder="Nome do Médico" className="input" />
+                </>
+              )}
+
+              {tipoSelecionado === 'exame' && (
+                <>
+                  <input type="text" name="titulo" placeholder="Nome do Exame" className="input" />
+                  <input type="date" name="data" className="input" />
+                  <input type="time" name="hora" className="input" />
+                  <input type="text" name="local" placeholder="Laboratório" className="input" />
+                  <textarea name="observacoes" placeholder="Observações" className="input" />
+                </>
+              )}
+
+              {tipoSelecionado === 'procedimento' && (
+                <>
+                  <input type="text" name="titulo" placeholder="Nome do Procedimento" className="input" />
+                  <input type="date" name="data" className="input" />
+                  <input type="time" name="hora" className="input" />
+                  <input type="text" name="local" placeholder="Hospital/Clínica" className="input" />
+                  <textarea name="observacoes" placeholder="Observações" className="input" />
+                </>
+              )}
+
               <button
                 type="submit"
                 className="w-full py-2 px-4 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"

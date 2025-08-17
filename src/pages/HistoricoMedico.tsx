@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Search, Filter, FileText, User, PlusCircle } from 'lucide-react';
-import { collection, getDocs, doc, updateDoc  } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, addDoc  } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { getStorage } from 'firebase/storage';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -83,6 +83,9 @@ const HistoricoMedico: React.FC = () => {
   const [registros, setRegistros] = useState<RegistroMedico[]>([]);
   const [registroSelecionado, setRegistroSelecionado] = useState<RegistroMedico | null>(null);
   const [modalAberto, setModalAberto] = useState(false);
+  const [novoRegistro, setNovoRegistro] = useState<Partial<RegistroMedico>>({});
+const [modalNovoAberto, setModalNovoAberto] = useState(false);
+
 
 
   // Carrega dados do Firestore
@@ -95,7 +98,13 @@ const HistoricoMedico: React.FC = () => {
           ...doc.data(),
         }));
         console.log('Registros encontrados:', dados);
-        setRegistros(dados as RegistroMedico[]);
+        // Ordenar do mais novo para o mais velho (assumindo formato ISO ou Timestamp convertido)
+      const dadosOrdenados = dados.sort((a, b) => {
+        const dataA = new Date(a.data).getTime();
+        const dataB = new Date(b.data).getTime();
+        return dataB - dataA;
+      });
+        setRegistros(dadosOrdenados as RegistroMedico[]);
       } catch (erro) {
         console.error('Erro ao buscar registros médicos:', erro);
       } finally {
@@ -148,6 +157,41 @@ const HistoricoMedico: React.FC = () => {
     } catch (error) {
       console.error('Erro ao enviar arquivo:', error);
       alert('Erro ao enviar arquivo. Tente novamente.');
+    }
+  };
+  
+  const salvarNovoRegistro = async () => {
+    if (
+      !novoRegistro.tipo ||
+      !novoRegistro.data ||
+      !novoRegistro.titulo ||
+      !novoRegistro.descricao ||
+      !novoRegistro.medico ||
+      !novoRegistro.especialidade ||
+      !novoRegistro.instituicao
+    ) {
+      alert('Preencha todos os campos obrigatórios.');
+      return;
+    }
+  
+    try {
+      const docRef = await addDoc(collection(db, 'historicoMedico'), {
+        ...novoRegistro,
+        documentos: [],
+      });
+  
+      const registroSalvo: RegistroMedico = {
+        id: docRef.id,
+        ...(novoRegistro as RegistroMedico),
+        documentos: [],
+      };
+  
+      setRegistros((prev) => [registroSalvo, ...prev]);
+      setModalNovoAberto(false);
+      alert('Registro adicionado com sucesso!');
+    } catch (error) {
+      console.error('Erro ao adicionar registro:', error);
+      alert('Erro ao adicionar registro. Tente novamente.');
     }
   };
   
@@ -204,7 +248,12 @@ const HistoricoMedico: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Histórico Médico</h1>
         
-        <button className="mt-4 md:mt-0 inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
+        <button
+           onClick={() => {
+            setNovoRegistro({});
+            setModalNovoAberto(true);
+          }}
+          className="mt-4 md:mt-0 inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors">
           <PlusCircle size={16} className="mr-2" />
           Adicionar Registro
         </button>
@@ -318,7 +367,7 @@ const HistoricoMedico: React.FC = () => {
                         <input
                           type="text"
                           className="border p-2 rounded"
-                          value={registroSelecionado.titulo}
+                          value={registroSelecionado.titulo || ''}
                           onChange={(e) =>
                             setRegistroSelecionado({ ...registroSelecionado, titulo: e.target.value })
                           }
@@ -327,7 +376,7 @@ const HistoricoMedico: React.FC = () => {
                         <input
                           type="text"
                           className="border p-2 rounded"
-                          value={registroSelecionado.medico}
+                          value={registroSelecionado.medico || ''}
                           onChange={(e) =>
                             setRegistroSelecionado({ ...registroSelecionado, medico: e.target.value })
                           }
@@ -336,7 +385,7 @@ const HistoricoMedico: React.FC = () => {
                         <input
                           type="text"
                           className="border p-2 rounded"
-                          value={registroSelecionado.especialidade}
+                          value={registroSelecionado.especialidade || ''}
                           onChange={(e) =>
                             setRegistroSelecionado({ ...registroSelecionado, especialidade: e.target.value })
                           }
@@ -345,7 +394,7 @@ const HistoricoMedico: React.FC = () => {
                         <input
                           type="date"
                           className="border p-2 rounded"
-                          value={registroSelecionado.data}
+                          value={registroSelecionado.data || ''}
                           onChange={(e) =>
                             setRegistroSelecionado({ ...registroSelecionado, data: e.target.value })
                           }
@@ -353,7 +402,7 @@ const HistoricoMedico: React.FC = () => {
                         <p className=''>Descrição</p>
                         <textarea
                           className="border p-2 rounded"
-                          value={registroSelecionado.descricao}
+                          value={registroSelecionado.descricao || ''}
                           onChange={(e) =>
                             setRegistroSelecionado({ ...registroSelecionado, descricao: e.target.value })
                           }
@@ -377,6 +426,89 @@ const HistoricoMedico: React.FC = () => {
                     </div>
                   </div>
                 )}
+
+                {modalNovoAberto && (
+                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white p-6 rounded-lg w-full max-w-xl space-y-4 relative">
+                      <button
+                        onClick={() => setModalNovoAberto(false)}
+                        className="absolute top-2 right-2 text-gray-500 hover:text-red-500"
+                      >
+                        ×
+                      </button>
+
+                      <h2 className="text-xl font-bold">Novo Registro Médico</h2>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        <select
+                          className="border p-2 rounded"
+                          value={novoRegistro.tipo || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, tipo: e.target.value as RegistroMedico['tipo'] })}
+                        >
+                          <option value="">Selecione o tipo</option>
+                          <option value="consulta">Consulta</option>
+                          <option value="exame">Exame</option>
+                          <option value="cirurgia">Cirurgia</option>
+                          <option value="vacinacao">Vacinação</option>
+                        </select>
+
+                        <input
+                          type="date"
+                          className="border p-2 rounded"
+                          value={novoRegistro.data || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, data: e.target.value })}
+                        />
+
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          placeholder="Título"
+                          value={novoRegistro.titulo || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, titulo: e.target.value })}
+                        />
+
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          placeholder="Médico"
+                          value={novoRegistro.medico || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, medico: e.target.value })}
+                        />
+
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          placeholder="Especialidade"
+                          value={novoRegistro.especialidade || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, especialidade: e.target.value })}
+                        />
+
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          placeholder="Instituição"
+                          value={novoRegistro.instituicao || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, instituicao: e.target.value })}
+                        />
+
+                        <textarea
+                          className="border p-2 rounded"
+                          placeholder="Descrição"
+                          value={novoRegistro.descricao || ''}
+                          onChange={(e) => setNovoRegistro({ ...novoRegistro, descricao: e.target.value })}
+                        />
+                      </div>
+
+                      <button
+                        onClick={salvarNovoRegistro}
+                        className="mt-4 w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
+                      >
+                        Salvar registro
+                      </button>
+                    </div>
+                  </div>
+                )}
+
 
                 
                 <div className="mt-4 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">

@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pill, Clock, Check, X } from 'lucide-react';
+import { Medicamento } from '../../interface/interface';
 
-interface Medicamento {
+/* interface Medicamento {
   id: number;
   nome: string;
   dosagem: string;
@@ -35,9 +36,14 @@ const medicamentos: Medicamento[] = [
     horarios: ['22:00'],
     status: 'atrasado',
   },
-];
+]; */
+interface MedicamentoWidgetProps {
+  medicamentos: Medicamento[];
+}
 
-const MedicamentosWidget: React.FC = () => {
+const MedicamentosWidget: React.FC<MedicamentoWidgetProps> = ({
+  medicamentos,
+}) => {
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
       <div className="flex items-center justify-between mb-6">

@@ -1,28 +1,17 @@
 import { Dialog, Transition } from '@headlessui/react';
 import React, { Fragment, useEffect, useState } from 'react';
 import { Pill, Trash2, Plus, Bell, Calendar, Clock, FileEdit } from 'lucide-react';
-import { collection, getDocs, deleteDoc, doc, addDoc } from 'firebase/firestore';
+import { collection, getDocs, deleteDoc, doc, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
-
-
-interface Medicamento {
-  id: string;
-  nome: string;
-  dosagem: string;
-  instrucoes: string;
-  frequencia: string;
-  horarios: string[];
-  inicio: string;
-  fim: string | null;
-  estoque: number;
-  medico: string;
-  status: 'ativo' | 'pausado' | 'finalizado';
-}
+import { Medicamento } from '../interface/interface';
 
 const Medicamentos: React.FC = () => {
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([]);
   const [filtro, setFiltro] = useState<'todos' | 'ativo' | 'pausado' | 'finalizado'>('todos');
   const [isOpen, setIsOpen] = useState(false);
+  const [isEditando, setIsEditando] = useState(false);
+  const [medicamentoEditandoId, setMedicamentoEditandoId] = useState<string | null>(null);
+
   const [formData, setFormData] = useState({
     nome: '',
     dosagem: '',
@@ -41,10 +30,6 @@ const Medicamentos: React.FC = () => {
   });
 function openModal() {
   setIsOpen(true);
-}
-
-function closeModal() {
-  setIsOpen(false);
 }
 
 const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -105,6 +90,78 @@ const fetchMedicamentos = async () => {
     })) as Medicamento[];
     setMedicamentos(dados);
   };
+
+  
+const handleUpdateMedicamento = async () => {
+  if (!medicamentoEditandoId) return;
+
+  const dataAtualizada = {
+    ...formData,
+    horarios: formData.horarios.split(',').map(h => h.trim()),
+    estoque: Number(formData.estoque),
+  };
+
+  try {
+    const docRef = doc(db, 'Medicamentos', medicamentoEditandoId);
+    await updateDoc(docRef, dataAtualizada);
+
+    showFeedback(true, 'Medicamento atualizado com sucesso!');
+    closeModal();
+    setIsEditando(false);
+    setMedicamentoEditandoId(null);
+    setFormData({
+      nome: '',
+      dosagem: '',
+      instrucoes: '',
+      frequencia: '',
+      horarios: '',
+      inicio: '',
+      fim: '',
+      estoque: 0,
+      medico: ''
+    });
+    fetchMedicamentos();
+  } catch (error) {
+    showFeedback(false, 'Erro ao atualizar medicamento.');
+    console.error('Erro ao editar medicamento:', error);
+  }
+};
+
+function closeModal() {
+  setIsOpen(false);
+  setIsEditando(false);
+  setMedicamentoEditandoId(null);
+  setFormData({
+    nome: '',
+    dosagem: '',
+    instrucoes: '',
+    frequencia: '',
+    horarios: '',
+    inicio: '',
+    fim: '',
+    estoque: 0,
+    medico: ''
+  });
+}
+
+
+  const abrirEdicao = (medicamento: Medicamento) => {
+    setFormData({
+      nome: medicamento.nome,
+      dosagem: medicamento.dosagem,
+      instrucoes: medicamento.instrucoes,
+      frequencia: medicamento.frequencia,
+      horarios: Array.isArray(medicamento.horarios) ? medicamento.horarios.join(', ') : '',
+      inicio: medicamento.inicio,
+      fim: medicamento.fim || '',
+      estoque: medicamento.estoque,
+      medico: medicamento.medico
+    });
+    setIsEditando(true);
+    setMedicamentoEditandoId(medicamento.id);
+    openModal();
+  };
+  
 
   const showFeedback = (success: boolean, message: string) => {
     setFeedbackModal({ open: true, success, message });
@@ -211,7 +268,8 @@ const fetchMedicamentos = async () => {
                     <button
                       type="button"
                       className="inline-flex justify-center rounded-md bg-primary-600 px-4 py-2 text-sm text-white hover:bg-primary-700"
-                      onClick={handleCreateMedicamento}
+                      onClick={isEditando ? handleUpdateMedicamento : handleCreateMedicamento}
+
                     >
                       Salvar
                     </button>
@@ -308,7 +366,7 @@ const fetchMedicamentos = async () => {
                   <div className="flex mt-4 md:mt-0 gap-2">
                     <button
                       className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
-                      onClick={() => alert(`Editar medicamento: ${medicamento.nome}`)}
+                      onClick={() => abrirEdicao(medicamento)}
                     >
                       <FileEdit size={18} />
                     </button>
