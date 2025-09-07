@@ -87,13 +87,34 @@ const Dashboard: React.FC = () => {
   };
 
   const carregarMedicamentos = async () => {
+    try {
       const querySnapshot = await getDocs(collection(db, 'Medicamentos'));
-      const dados: Medicamento[] = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      })) as Medicamento[];
-      setMedicamentos(dados);
-    };
+      const hoje = new Date();
+  
+      const dados: Medicamento[] = querySnapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Medicamento[];
+  
+      const filtrados = dados.filter(med => {
+        if (!med.fim) return true; // mantém se não tem data de fim
+  
+        // converte DD/MM/YYYY para Date
+        const [dia, mes, ano] = med.fim.split('/').map(Number);
+        const fim = new Date(ano, mes - 1, dia);
+        fim.setDate(fim.getDate() + 1); // adiciona 1 dia
+  
+        return fim >= hoje; // mantém apenas se fim+1 dia >= hoje
+      });
+  
+      setMedicamentos(filtrados);
+    } catch (error) {
+      console.error('Erro ao buscar medicamentos:', error);
+    }
+  };
+  
+  
   
 
  // Função para confirmar agendamento (atualiza status para 'confirmado')

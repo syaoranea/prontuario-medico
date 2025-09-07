@@ -48,6 +48,21 @@ const handleCreateMedicamento = async () => {
 
   try {
     await addDoc(collection(db, 'Medicamentos'), data);
+     // 2️⃣ Chama sua API Gateway para iniciar a Step Function
+     const response = await fetch("https://49n9vai118.execute-api.us-east-1.amazonaws.com/prd", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data), // manda o mesmo objeto salvo no Firestore
+    });
+
+    if (!response.ok) {
+      throw new Error("Erro ao chamar Step Function");
+    }
+
+    const stepResult = await response.json();
+    console.log("Step Function disparada:", stepResult);
     closeModal();
     showFeedback(true, 'Medicamento cadastrado com sucesso!');
     setFormData({
@@ -82,14 +97,24 @@ const fetchMedicamentos = async () => {
   }
 };
 
-  const carregarMedicamentos = async () => {
+const carregarMedicamentos = async () => {
+  try {
     const querySnapshot = await getDocs(collection(db, 'Medicamentos'));
-    const dados: Medicamento[] = querySnapshot.docs.map(doc => ({
+    let dados: Medicamento[] = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
     })) as Medicamento[];
+
+    // Ordena pelo último inserido primeiro
+    dados = dados.reverse(); // inverte o array, assumindo que os últimos docs estão no final
     setMedicamentos(dados);
-  };
+  } catch (error) {
+    console.error('Erro ao buscar medicamentos:', error);
+  }
+};
+
+
+
 
   
 const handleUpdateMedicamento = async () => {

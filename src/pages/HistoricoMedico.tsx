@@ -9,7 +9,7 @@ import { storage } from '../config/firebase'; // ajuste o caminho
 
 interface RegistroMedico {
   id: string;
-  tipo: 'consulta' | 'exame' | 'cirurgia' | 'vacinacao';
+  tipo: 'consulta' | 'exame' | 'cirurgia' | 'vacinacao' | 'internacao';
   data: string;
   titulo: string;
   descricao: string;
@@ -85,8 +85,8 @@ const HistoricoMedico: React.FC = () => {
   const [modalAberto, setModalAberto] = useState(false);
   const [novoRegistro, setNovoRegistro] = useState<Partial<RegistroMedico>>({});
 const [modalNovoAberto, setModalNovoAberto] = useState(false);
-
-
+const [mensagem, setMensagem] = useState<string | null>(null);
+const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null);
 
   // Carrega dados do Firestore
   useEffect(() => {
@@ -153,10 +153,12 @@ const [modalNovoAberto, setModalNovoAberto] = useState(false);
         prev.map((r) => (r.id === registroSelecionado.id ? registroAtualizado : r))
       );
   
-      alert('Arquivo enviado com sucesso!');
+      setMensagem('Registro adicionado com sucesso!');
+      setTipoMensagem('sucesso');
     } catch (error) {
       console.error('Erro ao enviar arquivo:', error);
-      alert('Erro ao enviar arquivo. Tente novamente.');
+      setMensagem('Erro ao salvar alterações. Tente novamente.');
+      setTipoMensagem('erro');
     }
   };
   
@@ -188,10 +190,12 @@ const [modalNovoAberto, setModalNovoAberto] = useState(false);
   
       setRegistros((prev) => [registroSalvo, ...prev]);
       setModalNovoAberto(false);
-      alert('Registro adicionado com sucesso!');
+      setMensagem('Registro adicionado com sucesso!');
+      setTipoMensagem('sucesso');
     } catch (error) {
       console.error('Erro ao adicionar registro:', error);
-      alert('Erro ao adicionar registro. Tente novamente.');
+      setMensagem('Erro ao salvar alterações. Tente novamente.');
+      setTipoMensagem('erro');
     }
   };
   
@@ -216,7 +220,8 @@ const [modalNovoAberto, setModalNovoAberto] = useState(false);
       setModalAberto(false);
     } catch (error) {
       console.error('Erro ao salvar alterações:', error);
-      alert('Erro ao salvar alterações. Tente novamente.');
+      setMensagem('Erro ao salvar alterações. Tente novamente.');
+      setTipoMensagem('erro');
     }
   };
   
@@ -288,6 +293,7 @@ const [modalNovoAberto, setModalNovoAberto] = useState(false);
               <option value="exame">Exames</option>
               <option value="cirurgia">Cirurgias</option>
               <option value="vacinacao">Vacinações</option>
+              <option value="internacao">Internação</option>
             </select>
           </div>
         </div>
@@ -340,7 +346,23 @@ const [modalNovoAberto, setModalNovoAberto] = useState(false);
                       </div>
                     ))}
                   </div>
-                  
+                  {mensagem && (
+                    <div className="fixed inset-0 flex items-center justify-center z-50">
+                      <div className="bg-white shadow-lg rounded-lg p-6 w-full max-w-sm text-center relative">
+                        <button
+                          onClick={() => setMensagem(null)}
+                          className="absolute top-2 right-2 text-gray-500 hover:text-red-500"
+                        >
+                          ×
+                        </button>
+                        <h2 className={`text-lg font-bold mb-2 ${tipoMensagem === 'sucesso' ? 'text-green-600' : 'text-red-600'}`}>
+                          {tipoMensagem === 'sucesso' ? 'Sucesso!' : 'Erro'}
+                        </h2>
+                        <p className="text-gray-700">{mensagem}</p>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="text-right mt-2 md:mt-0">
                   <button
                     onClick={() => abrirModal(registro)}
@@ -450,6 +472,7 @@ const [modalNovoAberto, setModalNovoAberto] = useState(false);
                           <option value="exame">Exame</option>
                           <option value="cirurgia">Cirurgia</option>
                           <option value="vacinacao">Vacinação</option>
+                          <option value="internacao">Internação</option>
                         </select>
 
                         <input
