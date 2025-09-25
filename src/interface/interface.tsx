@@ -10,7 +10,7 @@ export interface Agendamento {
     profissional: string;
     especialidade: string;
     observacoes: string;
-    status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado';
+    status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado' | 'pendente';
   }
 
   export interface Metrica {
@@ -45,7 +45,7 @@ export interface Agendamento {
     profissional: string;
     especialidade: string;
     observacoes: string;
-    status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado';
+    status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado' | 'pendente';
   }
 
   export interface Medicamento {

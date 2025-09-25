@@ -15,6 +15,89 @@ const Agendamentos: React.FC = () => {
   const [agendamentoEditando, setAgendamentoEditando] = useState<Agendamento | null>(null);
   const [mostrarModalTipo, setMostrarModalTipo] = useState(false);
   const [tipoSelecionado, setTipoSelecionado] = useState<string | null>(null);
+// Novo estado para modal de realizado
+const [mostrarModalRealizado, setMostrarModalRealizado] = useState(false);
+const [abaAtiva, setAbaAtiva] = useState<'historico' | 'medicamentos' | 'exames'>('historico');
+
+// Dados dos formulários
+const [dadosHistorico, setDadosHistorico] = useState({
+  titulo: '',
+  descricao: '',
+  medico: '',
+  especialidade: '',
+  instituicao: '',
+});
+
+const [dadosMedicamentos, setDadosMedicamentos] = useState([{ nome: '', dose: '', instrucoes: '', frequencia: '', horarios: '', inicio: '', fim: '', estoque: '', medico: '' }]);
+const [dadosExames, setDadosExames] = useState([{ titulo: '', laboratorio: '', data: '', hora: '', observacao: '' }]);
+
+const formatarTexto = (valor?: string) => {
+  if (!valor) return "N/A";
+  return valor.charAt(0).toUpperCase() + valor.slice(1);
+};
+
+const salvarRealizado = async () => {
+  try {
+    if (!agendamentoEditando) return;
+
+    // Atualiza status do agendamento
+    const refAgendamento = doc(db, "agendamentos", agendamentoEditando.id);
+    await updateDoc(refAgendamento, { status: "realizado" });
+
+    // Salva no histórico médico
+    await addDoc(collection(db, "historicoMedico"), {
+      ...dadosHistorico,
+      data: agendamentoEditando.data,
+      tipo: agendamentoEditando.tipo,
+      agendamentoId: agendamentoEditando.id,
+    });
+
+    const medicamentosValidos = dadosMedicamentos.filter(
+      (med) =>
+        med.nome?.trim() !== "" || // só salva se algum campo estiver preenchido
+        med.dose?.trim() !== "" ||
+        med.frequencia?.trim() !== "" ||
+        med.estoque?.trim() !== "" ||
+        med.fim?.trim() !== "" ||
+        med.horarios?.trim() !== "" ||
+        med.inicio?.trim() !== "" ||
+        med.instrucoes?.trim() !== "" ||
+        med.medico?.trim() !== ""        
+    );
+
+    // Salva medicamentos individualmente
+
+    for (const med of medicamentosValidos) {
+      await addDoc(collection(db, "Medicamentos"), {
+        ...med,
+        status: "ativo",
+   
+      });
+    
+  }
+
+    if(dadosExames){
+    // Salva exames com status "pendente"
+    for (const ex of dadosExames) {
+      await addDoc(collection(db, "agendamentos"), {
+        ...ex,
+        tipo: "exame",
+        status: "pendente",
+      });
+    }
+  }
+
+    setModalMensagem("Dados cadastrados com sucesso!");
+    setMostrarModalMensagem(true);
+    setMostrarModalRealizado(false);
+    buscarAgendamentos();
+  } catch (err) {
+    console.error(err);
+    setModalMensagem("Erro ao salvar dados.");
+    setMostrarModalMensagem(true);
+  }
+};
+
 
 
 
@@ -30,8 +113,13 @@ const Agendamentos: React.FC = () => {
         id: doc.id,
         ...doc.data(),
       })) as unknown as Agendamento[];
-  
-      setAgendamentos(dados);
+          // Ordenar do mais recente para o mais antigo
+      const dadosOrdenados = dados.sort((a, b) => {
+      const dataHoraA = new Date(`${a.data}T${a.hora}`).getTime();
+      const dataHoraB = new Date(`${b.data}T${b.hora}`).getTime();
+      return dataHoraB - dataHoraA; // mais recente primeiro
+    });
+      setAgendamentos(dadosOrdenados);
     } catch (err) {
       console.error(err);
     } finally {
@@ -226,7 +314,7 @@ const Agendamentos: React.FC = () => {
                   }}
                   className="w-full py-2 px-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
                 >
-                  {tipo.charAt(0).toUpperCase() + tipo.slice(1)}
+                  {formatarTexto(tipo)}
                 </button>
               ))}
             </div>
@@ -246,39 +334,46 @@ const Agendamentos: React.FC = () => {
             </button>
 
             <h2 className="text-xl font-bold mb-4">
-              Novo {tipoSelecionado && tipoSelecionado.charAt(0).toUpperCase() + tipoSelecionado.slice(1)}
+              Novo {tipoSelecionado && formatarTexto(tipoSelecionado)}
             </h2>
 
             <form onSubmit={handleSalvarAgendamento} className="space-y-4">
               <input type="hidden" name="tipo" value={tipoSelecionado || ''} />
 
               {/* Campos de cada tipo */}
+              
               {tipoSelecionado === 'consulta' && (
                 <>
-                  <input type="text" name="titulo" placeholder="Especialidade" className="input" />
-                  <input type="date" name="data" className="input" />
-                  <input type="time" name="hora" className="input" />
-                  <input type="text" name="local" placeholder="Local" className="input" />
-                  <input type="text" name="profissional" placeholder="Nome do Médico" className="input" />
+                  <input 
+                    type="text"  name="titulo" placeholder="Especialidade"  defaultValue={agendamentoEditando?.titulo || ''} className="input" />
+                  <input 
+                    type="date" name="data" defaultValue={agendamentoEditando?.data || ''}  className="input"/>
+                  <input 
+                    type="time" name="hora" defaultValue={agendamentoEditando?.hora || ''} className="input"/>
+                  <input 
+                    type="text" name="local" placeholder="Local" defaultValue={agendamentoEditando?.local || ''} className="input"/>
+                  <input 
+                    type="text" name="profissional" placeholder="Nome do Médico" defaultValue={agendamentoEditando?.profissional || ''} className="input"/>
                 </>
               )}
 
+
               {tipoSelecionado === 'exame' && (
                 <>
-                  <input type="text" name="titulo" placeholder="Nome do Exame" className="input" />
-                  <input type="date" name="data" className="input" />
-                  <input type="time" name="hora" className="input" />
-                  <input type="text" name="local" placeholder="Laboratório" className="input" />
+                  <input type="text" name="titulo" placeholder="Nome do Exame" className="input" defaultValue={agendamentoEditando?.titulo || ''} />
+                  <input type="date" name="data" className="input" defaultValue={agendamentoEditando?.data || ''}/>
+                  <input type="time" name="hora" className="input" defaultValue={agendamentoEditando?.hora || ''}/>
+                  <input type="text" name="local" placeholder="Laboratório" className="input"  defaultValue={agendamentoEditando?.local || ''}/>
                   <textarea name="observacoes" placeholder="Observações" className="input" />
                 </>
               )}
 
               {tipoSelecionado === 'procedimento' && (
                 <>
-                  <input type="text" name="titulo" placeholder="Nome do Procedimento" className="input" />
-                  <input type="date" name="data" className="input" />
-                  <input type="time" name="hora" className="input" />
-                  <input type="text" name="local" placeholder="Hospital/Clínica" className="input" />
+                  <input type="text" name="titulo" placeholder="Nome do Procedimento" className="input" defaultValue={agendamentoEditando?.titulo || ''} />
+                  <input type="date" name="data" className="input" defaultValue={agendamentoEditando?.data || ''}/>
+                  <input type="time" name="hora" className="input" defaultValue={agendamentoEditando?.hora || ''}/>
+                  <input type="text" name="local" placeholder="Hospital/Clínica" className="input" defaultValue={agendamentoEditando?.local || ''} />
                   <textarea name="observacoes" placeholder="Observações" className="input" />
                 </>
               )}
@@ -293,6 +388,271 @@ const Agendamentos: React.FC = () => {
           </div>
         </div>
       )}
+
+{mostrarModalRealizado && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-2xl relative">
+      <button
+        onClick={() => setMostrarModalRealizado(false)}
+        className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+      >
+        ✕
+      </button>
+
+      {/* Tabs */}
+      <div className="flex border-b mb-4">
+        {['historico', 'medicamentos', 'exames'].map((aba) => (
+          <button
+            key={aba}
+            onClick={() => setAbaAtiva(aba as any)}
+            className={`px-4 py-2 ${
+              abaAtiva === aba ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500'
+            }`}
+          >
+            {formatarTexto(aba)}
+          </button>
+        ))}
+      </div>
+
+      {/* Conteúdo da aba */}
+      {abaAtiva === 'historico' && (
+        <div className="space-y-3">
+          <input
+            type="text"
+            placeholder="Título"
+            value={dadosHistorico.titulo}
+            onChange={(e) => setDadosHistorico({ ...dadosHistorico, titulo: e.target.value })}
+            className="input"
+          />
+          <textarea
+            placeholder="Descrição"
+            value={dadosHistorico.descricao}
+            onChange={(e) => setDadosHistorico({ ...dadosHistorico, descricao: e.target.value })}
+            className="input"
+          />
+          <input
+            type="text"
+            placeholder="Médico"
+            value={dadosHistorico.medico}
+            onChange={(e) => setDadosHistorico({ ...dadosHistorico, medico: e.target.value })}
+            className="input"
+          />
+          <input
+            type="text"
+            placeholder="Especialidade"
+            value={dadosHistorico.especialidade}
+            onChange={(e) => setDadosHistorico({ ...dadosHistorico, especialidade: e.target.value })}
+            className="input"
+          />
+          <input
+            type="text"
+            placeholder="Instituição"
+            value={dadosHistorico.instituicao}
+            onChange={(e) => setDadosHistorico({ ...dadosHistorico, instituicao: e.target.value })}
+            className="input"
+          />
+        </div>
+      )}
+
+      {abaAtiva === 'medicamentos' && (
+        <div>
+          {dadosMedicamentos.map((med, idx) => (
+            <div key={idx} className="flex gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="Medicamento"
+                value={med.nome}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].nome = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                placeholder="Dosagem"
+                value={med.dose}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].dose = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+
+              <input
+                type="text"
+                placeholder="Instruções"
+                value={med.instrucoes}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].instrucoes = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+
+              <input
+                type="text"
+                placeholder="Frequência"
+                value={med.frequencia}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].frequencia = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+
+              <input
+                type="text"
+                placeholder="Horários"
+                value={med.horarios}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].horarios = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                placeholder="Início"
+                value={med.inicio}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].inicio = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+
+              <input
+                type="text"
+                placeholder="Fim "
+                value={med.fim}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].fim = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                placeholder="Estoque"
+                value={med.estoque}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].estoque = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                placeholder="Médico"
+                value={med.medico}
+                onChange={(e) => {
+                  const novo = [...dadosMedicamentos];
+                  novo[idx].medico = e.target.value;
+                  setDadosMedicamentos(novo);
+                }}
+                className="input flex-1"
+              />
+            </div>
+          ))}
+          <button
+            onClick={() => setDadosMedicamentos([...dadosMedicamentos, { nome: '', dose: '', instrucoes: '', frequencia: '', horarios: '', inicio: '', fim: '', estoque: '', medico: ''  }])}
+            className="text-blue-600 text-sm mt-2"
+          >
+            + Adicionar medicamento
+          </button>
+        </div>
+      )}
+
+      {abaAtiva === 'exames' && (
+        <div>
+          {dadosExames.map((ex, idx) => (
+            <div key={idx} className="flex gap-2 mb-2">
+              <input
+                type="text"
+                placeholder="Nome do Exame"
+                value={ex.titulo}
+                onChange={(e) => {
+                  const novo = [...dadosExames];
+                  novo[idx].titulo = e.target.value;
+                  setDadosExames(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                placeholder="Laboratório "
+                value={ex.laboratorio}
+                onChange={(e) => {
+                  const novo = [...dadosExames];
+                  novo[idx].laboratorio = e.target.value;
+                  setDadosExames(novo);
+                }}
+                className="input flex-1"
+              />
+
+              <input
+                type="date"
+                name='data'
+                value={ex.data}
+                onChange={(e) => {
+                  const novo = [...dadosExames];
+                  novo[idx].data = e.target.value;
+                  setDadosExames(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="time"
+                name='hora'
+                value={ex.hora}
+                onChange={(e) => {
+                  const novo = [...dadosExames];
+                  novo[idx].hora = e.target.value;
+                  setDadosExames(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                placeholder="observação "
+                value={ex.observacao}
+                onChange={(e) => {
+                  const novo = [...dadosExames];
+                  novo[idx].observacao = e.target.value;
+                  setDadosExames(novo);
+                }}
+                className="input flex-1"
+              />
+            </div>
+          ))}
+          <button
+            onClick={() => setDadosExames([...dadosExames, { titulo: '', laboratorio: '', data: '', hora: '', observacao: '' }])}
+            className="text-blue-600 text-sm mt-2"
+          >
+            + Adicionar exame
+          </button>
+        </div>
+      )}
+
+      <button
+        onClick={salvarRealizado}
+        className="mt-6 w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+      >
+        Cadastrar
+      </button>
+    </div>
+  </div>
+)}
+
 
       
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -349,13 +709,14 @@ const Agendamentos: React.FC = () => {
                     <div className="flex-1">
                       <div className="flex items-center flex-wrap gap-2">
                         <span className={`inline-block px-2 py-1 text-xs rounded-full ${
+
                           agendamento.tipo === 'consulta' 
                             ? 'bg-blue-100 text-blue-800' 
                             : agendamento.tipo === 'exame'
                             ? 'bg-purple-100 text-purple-800'
                             : 'bg-amber-100 text-amber-800'
                         }`}>
-                          {agendamento.tipo.charAt(0).toUpperCase() + agendamento.tipo.slice(1)}
+                          {formatarTexto(agendamento.tipo)}
                         </span>
                         
                         <span className={`inline-block px-2 py-1 text-xs rounded-full ${
@@ -367,7 +728,7 @@ const Agendamentos: React.FC = () => {
                             ? 'bg-blue-100 text-blue-800'
                             : 'bg-red-100 text-red-800'
                         }`}>
-                          {agendamento.status.charAt(0).toUpperCase() + agendamento.status.slice(1)}
+                          {formatarTexto(agendamento.status)}
                         </span>
                       </div>
                       
@@ -427,13 +788,18 @@ const Agendamentos: React.FC = () => {
                           className="inline-flex items-center justify-center px-3 py-1.5 border border-blue-500 text-blue-600 hover:bg-blue-50 rounded-lg text-sm transition-colors"
                           onClick={() => {
                             setAgendamentoEditando(agendamento);
+                            setTipoSelecionado(agendamento.tipo);
                             setMostrarModal(true);
                           }}
                         >
                           ✎ Editar
                         </button>
                         <button
-                          onClick={() => marcarComoRealizado(agendamento)}
+                          onClick={() => {
+                            setAgendamentoEditando(agendamento);
+                            setMostrarModalRealizado(true);
+                          }}
+                          
                           className="inline-flex items-center justify-center px-3 py-1.5 border border-blue-600 text-blue-700 hover:bg-blue-50 rounded-lg text-sm transition-colors"
                         >
                           <CheckCircle size={14} className="mr-1" />

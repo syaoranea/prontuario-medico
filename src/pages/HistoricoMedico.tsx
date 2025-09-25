@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Search, Filter, FileText, User, PlusCircle } from 'lucide-react';
-import { collection, getDocs, doc, updateDoc, addDoc  } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, addDoc, Timestamp  } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { getStorage } from 'firebase/storage';
+import { getStorage, uploadBytesResumable } from 'firebase/storage';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../config/firebase'; // ajuste o caminho
 
@@ -17,6 +17,18 @@ interface RegistroMedico {
   especialidade: string;
   instituicao: string;
   documentos?: { id: string; nome: string; tipo: string; url: string}[];
+}
+
+interface Documento {
+  id: string;
+  nome: string;
+  tipo: string;
+  categoria: string;
+  data: string;
+  tamanho: string;
+  origem: string;
+  descricao?: string;
+  url: string;
 }
 
 /* const registrosMedicos: RegistroMedico[] = [
@@ -87,6 +99,8 @@ const HistoricoMedico: React.FC = () => {
 const [modalNovoAberto, setModalNovoAberto] = useState(false);
 const [mensagem, setMensagem] = useState<string | null>(null);
 const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null);
+const [arquivo, setArquivo] = useState<File | null>(null);
+const [progresso, setProgresso] = useState(0);
 
   // Carrega dados do Firestore
   useEffect(() => {
@@ -119,6 +133,75 @@ const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null
     setRegistroSelecionado(registro);
     setModalAberto(true);
   };
+
+  const excluirRegistro = async () => {
+    if (!registroSelecionado) return;
+  
+    try {
+      await updateDoc(doc(db, 'historicoMedico', registroSelecionado.id), {
+        deleted: true, // se quiser apenas marcar como deletado
+      });
+  
+      // ou remover de vez:
+      // await deleteDoc(doc(db, 'historicoMedico', registroSelecionado.id));
+  
+      setRegistros((prev) => prev.filter((r) => r.id !== registroSelecionado.id));
+      setModalAberto(false);
+  
+      setMensagem('Registro excluído com sucesso!');
+      setTipoMensagem('sucesso');
+    } catch (error) {
+      console.error('Erro ao excluir registro:', error);
+      setMensagem('Erro ao excluir registro. Tente novamente.');
+      setTipoMensagem('erro');
+    }
+  };
+
+
+  const handleUpload = () => {
+    if (!arquivo) return;
+  
+    const storageRef = ref(storage, `documentos/${arquivo.name}`);
+    const uploadTask = uploadBytesResumable(storageRef, arquivo);
+  
+    uploadTask.on(
+      "state_changed",
+      (snapshot) => {
+        const progressoAtual = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        setProgresso(progressoAtual);
+      },
+      (error) => {
+        console.error("Erro ao fazer upload:", error);
+      },
+      async () => {
+        try {
+          const url = await getDownloadURL(uploadTask.snapshot.ref);
+  
+          // Cria os dados do documento
+          const documentoData = {
+            nome: arquivo.name,
+            tipo: arquivo.type.split("/")[1]?.toUpperCase() || "PDF",
+            categoria: "Exames", // Pode ser dinâmico
+            data: new Date().toLocaleDateString("pt-BR"),
+            tamanho: `${(arquivo.size / 1024 / 1024).toFixed(1)} MB`,
+            origem: "Usuário", // Pode ser substituído por input
+            descricao: "", // Opcional
+            url, // URL do arquivo no storage
+            criadoEm: Timestamp.now(),
+          };
+  
+          // Salva no Firestore
+          await addDoc(collection(db, "documentos"), documentoData);
+  
+          console.log("Documento salvo com sucesso!");
+        } catch (err) {
+          console.error("Erro ao salvar no Firestore:", err);
+        }
+  
+      }
+    );
+  };
+  
 
   const handleUploadArquivo = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -181,6 +264,8 @@ const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null
         ...novoRegistro,
         documentos: [],
       });
+
+      handleUpload();
   
       const registroSalvo: RegistroMedico = {
         id: docRef.id,
@@ -211,7 +296,7 @@ const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null
   
       await updateDoc(registroRef, dadosParaSalvar);
       console.log('Registro atualizado com sucesso!');
-  
+      handleUpload();
       // Atualiza localmente
       setRegistros((prev) =>
         prev.map((r) => (r.id === registroSelecionado.id ? registroSelecionado : r))
@@ -412,6 +497,16 @@ const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null
                             setRegistroSelecionado({ ...registroSelecionado, especialidade: e.target.value })
                           }
                         />
+
+                        <p>Instituição</p>
+                        <input
+                          type="text"
+                          className="border p-2 rounded"
+                          value={registroSelecionado.instituicao || ''}
+                          onChange={(e) =>
+                            setRegistroSelecionado({ ...registroSelecionado, instituicao: e.target.value })
+                          }
+                        />
                         <p>Data</p>
                         <input
                           type="date"
@@ -432,11 +527,18 @@ const [tipoMensagem, setTipoMensagem] = useState<'sucesso' | 'erro' | null>(null
                         <p className=''>Arquivo</p>
                         <input
                           type="file"
-                          accept="application/pdf,image/jpeg,image/png"
-                          onChange={handleUploadArquivo}
+                          onChange={(e) => setArquivo(e.target.files?.[0] || null)}
                         />
 
                       </div>
+
+                      <button
+                        onClick={excluirRegistro}
+                        className="mt-2 w-full bg-red-600 text-white py-2 rounded hover:bg-red-700"
+                      >
+                        Excluir registro
+                      </button>
+
 
                       <button
                         onClick={salvarAlteracoes}

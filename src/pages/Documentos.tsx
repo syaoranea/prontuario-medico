@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-import { ref, uploadBytesResumable, getDownloadURL} from 'firebase/storage';
+import { ref, uploadBytesResumable, getDownloadURL, uploadBytes} from 'firebase/storage';
 import { db, storage } from '../config/firebase';
 import { ChevronDown, ChevronRight, FilePlus, FileText, Filter, Folder, Search, Upload } from 'lucide-react';
 import {addDoc , Timestamp , getDocs , collection} from 'firebase/firestore';
@@ -113,7 +113,17 @@ useEffect(() => {
 const handleUpload = () => {
   if (!arquivo) return;
 
-  const storageRef = ref(storage, `documentos/${arquivo.name}`);
+  // 🔹 Remove acentos, espaços e caracteres especiais
+  const sanitizedFileName = arquivo.name
+    .normalize("NFD") // separa acentos
+    .replace(/[\u0300-\u036f]/g, "") // remove acentos
+    .replace(/\s+/g, "_") // troca espaço por _
+    .replace(/[^a-zA-Z0-9._-]/g, ""); // remove caracteres estranhos
+
+  // 🔹 Adiciona timestamp para evitar conflito de nomes
+  const uniqueFileName = `${Date.now()}_${sanitizedFileName}`;
+
+  const storageRef = ref(storage, `documentos/${uniqueFileName}`);
   const uploadTask = uploadBytesResumable(storageRef, arquivo);
 
   uploadTask.on(
@@ -127,22 +137,21 @@ const handleUpload = () => {
     },
     async () => {
       try {
-        const url = await getDownloadURL(uploadTask.snapshot.ref);
-
-        // Cria os dados do documento
+        await uploadBytes(storageRef, arquivo); // sobrescreve se já existir
+        const url = await getDownloadURL(storageRef);
+        
         const documentoData = {
-          nome: arquivo.name,
+          nome: arquivo.name, // mantém o nome original para exibir ao usuário
           tipo: arquivo.type.split("/")[1]?.toUpperCase() || "PDF",
-          categoria: "Exames", // Pode ser dinâmico
+          categoria: "Exames",
           data: new Date().toLocaleDateString("pt-BR"),
           tamanho: `${(arquivo.size / 1024 / 1024).toFixed(1)} MB`,
-          origem: "Usuário", // Pode ser substituído por input
-          descricao: "", // Opcional
-          url, // URL do arquivo no storage
+          origem: "Usuário",
+          descricao: "",
+          url,
           criadoEm: Timestamp.now(),
         };
 
-        // Salva no Firestore
         await addDoc(collection(db, "documentos"), documentoData);
 
         console.log("Documento salvo com sucesso!");
@@ -156,6 +165,7 @@ const handleUpload = () => {
     }
   );
 };
+
 
 const visualizarDocumento = (url: string) => {
   window.open(url, '_blank');
