@@ -5,7 +5,7 @@ import ProximosAgendamentosWidget from '../components/widgets/ProximosAgendament
 import MedicamentosWidget from '../components/widgets/MedicamentosWidget';
 import AlertasWidget from '../components/widgets/AlertasWidget';
 import { useUsuario } from '../config/bd/userContext';
-import { collection, query, where, orderBy, getDocs, Timestamp, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, Timestamp, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Agendamento, Medicamento, Metrica, MetricaData } from '../interface/interface';
 
@@ -33,7 +33,7 @@ export const reagendarAgendamento = async (
 };
 
 const Dashboard: React.FC = () => {
-  const [proximaConsulta, setProximaConsulta] = useState<string | null>(null);
+  const [proximaConsulta, setProximaConsulta] = useState<any | null>(null);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [metricaAtiva, setMetricaAtiva] = useState<string>('');
   const [metricas, setMetricas] = useState<Metrica[]>([]);
@@ -48,7 +48,6 @@ const Dashboard: React.FC = () => {
   const [pendentes, setPendentes] = useState<Agendamento[]>([]);
   const [totalPendentes, setTotalPendentes] = useState(0);
 
-
   useEffect(() => {
     buscarAgendamentos();
     buscarMetricas();
@@ -58,6 +57,14 @@ const Dashboard: React.FC = () => {
       setTotalPendentes(total);
       setPendentes(pendentes);
     };
+    const carregarConsulta = async () => {
+      const resultado = await buscarProximaConsulta();
+      console.log('aqui'+ resultado)
+
+      setProximaConsulta(resultado);
+    };
+
+    carregarConsulta();
   
     carregar();
   }, []);
@@ -154,6 +161,69 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const buscarProximaConsulta = async (): Promise<{ titulo: string; data: string } | null> => {
+    try {
+      const q = query(
+        collection(db, "agendamentos"),
+        where("status", "==", "agendado"),
+        where("tipo", "==", "consulta")
+      );
+  
+      const snapshot = await getDocs(q);
+  
+      if (snapshot.empty) return null;
+  
+      const pendentes = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<Agendamento, "id">),
+      }));
+  
+      // ordenar pelas datas
+      const ordenados = pendentes.sort((a, b) => {
+        const dataA = parseDataString(a.data);
+        const dataB = parseDataString(b.data);
+  
+        if (!dataA || !dataB) return 0;
+  
+        return dataA.getTime() - dataB.getTime();
+      });
+  
+      const proxima = ordenados[0];
+  
+      const dataFormatada = formatarData(proxima.data);
+  
+      return {
+        titulo: proxima.titulo,
+        data: dataFormatada,
+      };
+    } catch (error) {
+      console.error("Erro ao buscar próxima consulta:", error);
+      return null;
+    }
+  };
+  
+  function parseDataString(dataStr: string): Date | null {
+    const partes = dataStr.split("/"); // espera dd/MM/yyyy
+    if (partes.length !== 3) return null;
+  
+    const [dia, mes, ano] = partes.map(Number);
+    const data = new Date(ano, mes - 1, dia);
+  
+    return isNaN(data.getTime()) ? null : data;
+  }
+  
+  function formatarData(dataStr: string): string {
+    const data = new Date(dataStr); // funciona com '2025-09-30'
+    if (isNaN(data.getTime())) return dataStr;
+  
+    const nomesMeses = [
+      "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+      "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    ];
+  
+    return `${data.getDate()} de ${nomesMeses[data.getMonth()]}`;
+  }
+  
 
  // Função para confirmar agendamento (atualiza status para 'confirmado')
  const handleConfirmar = async (id: string) => {
@@ -351,9 +421,16 @@ const salvarReagendamento = async () => {
           </div>
           <div>
             <p className="text-sm text-gray-500">Próxima Consulta</p>
-            <p className={`font-semibold ${proximaConsulta === 'Nenhuma consulta agendada' ? 'text-red-500' : ''}`}>
-            {proximaConsulta ?? 'Nenhuma consulta agendada...'}
-    </p>
+            
+            {proximaConsulta ? (
+              <p className="font-semibold text-gray-800">
+                {proximaConsulta.titulo} em {proximaConsulta.data}
+              </p>
+            ) : (
+              <p className="font-semibold text-red-500">
+                Nenhuma consulta agendada...
+              </p>
+            )}
           </div>
         </div>
         
