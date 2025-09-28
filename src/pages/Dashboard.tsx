@@ -45,12 +45,21 @@ const Dashboard: React.FC = () => {
   const [agendamentoReagendar, setAgendamentoReagendar] = useState('');
   const [novaData, setNovaData] = useState('');
   const [novaHora, setNovaHora] = useState('');
+  const [pendentes, setPendentes] = useState<Agendamento[]>([]);
+  const [totalPendentes, setTotalPendentes] = useState(0);
 
 
   useEffect(() => {
     buscarAgendamentos();
     buscarMetricas();
     carregarMedicamentos();
+    const carregar = async () => {
+      const { total, pendentes } = await buscarPendentes();
+      setTotalPendentes(total);
+      setPendentes(pendentes);
+    };
+  
+    carregar();
   }, []);
   
   
@@ -113,9 +122,38 @@ const Dashboard: React.FC = () => {
       console.error('Erro ao buscar medicamentos:', error);
     }
   };
+
+  const buscarPendentes = async (): Promise<{
+    total: number;
+    pendentes: Agendamento[];
+  }> => {
+    try {
+      const q = query(
+        collection(db, "agendamentos"),
+        where("status", "==", "pendente"),
+        where("tipo", "in", ["consulta", "exame"]) // pega os dois
+      );
   
+      const snapshot = await getDocs(q);
   
+      const pendentes = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<Agendamento, "id">),
+      }));
   
+      return {
+        total: pendentes.filter((p) => p.tipo === 'exame').length,
+        pendentes,
+      };
+    } catch (error) {
+      console.error("Erro ao buscar pendentes:", error);
+      return {
+        total: 0,
+        pendentes: [],
+      };
+    }
+  };
+
 
  // Função para confirmar agendamento (atualiza status para 'confirmado')
  const handleConfirmar = async (id: string) => {
@@ -345,7 +383,7 @@ const salvarReagendamento = async () => {
           </div>
           <div>
             <p className="text-sm text-gray-500">Exames Pendentes</p>
-            <p className="font-semibold">3</p>
+            <p className="font-semibold">{totalPendentes}</p>
           </div>
         </div>
       </div>
@@ -362,7 +400,8 @@ const salvarReagendamento = async () => {
         <MedicamentosWidget 
           medicamentos={medicamentos}
         />
-        <AlertasWidget />
+        <AlertasWidget  
+        alertas={pendentes}/>
       </div>
     </div>
 

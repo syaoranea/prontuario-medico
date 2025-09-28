@@ -1,6 +1,6 @@
 export interface Agendamento {
     id: string;
-    tipo: 'consulta' | 'exame' | 'procedimento';
+    tipo: 'consulta' | 'exame' | 'procedimento' | 'medicamento';
     titulo: string;
     data: string;
     hora: string;
@@ -11,6 +11,8 @@ export interface Agendamento {
     especialidade: string;
     observacoes: string;
     status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado' | 'pendente';
+    prioridade: string;
+    mensagem: string;
   }
 
   export interface Metrica {
@@ -35,7 +37,7 @@ export interface Agendamento {
 
   export interface Agendamento {
     id: string;
-    tipo: 'consulta' | 'exame' | 'procedimento';
+    tipo: 'consulta' | 'exame' | 'procedimento' | 'medicamento';
     titulo: string;
     data: string;
     hora: string;
@@ -46,6 +48,7 @@ export interface Agendamento {
     especialidade: string;
     observacoes: string;
     status: 'agendado' | 'confirmado' | 'realizado' | 'cancelado' | 'pendente';
+    prioridade: string;
   }
 
   export interface Medicamento {

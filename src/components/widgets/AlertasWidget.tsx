@@ -1,5 +1,12 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertTriangle, FileText, Pill, Calendar, ArrowRight } from 'lucide-react';
+import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
+import { db } from '../../config/firebase';
+import { Agendamento } from '../../interface/interface';
+
+interface AlertaWidgetProps {
+  alertas: Agendamento[];
+}
 
 interface Alerta {
   id: number;
@@ -40,7 +47,10 @@ const alertas: Alerta[] = [
   },
 ];
 
-const AlertasWidget: React.FC = () => {
+const AlertasWidget: React.FC<AlertaWidgetProps> = ({
+  alertas,
+  }) => {
+  
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
       <div className="flex items-center justify-between mb-6">
@@ -52,7 +62,7 @@ const AlertasWidget: React.FC = () => {
       </div>
       
       <div className="space-y-3">
-        {alertas.map((alerta) => (
+  {/*       {alertas.map((alerta) => (
           <div 
             key={alerta.id} 
             className={`p-4 border rounded-lg flex items-start space-x-3 ${
@@ -84,7 +94,45 @@ const AlertasWidget: React.FC = () => {
               <ArrowRight size={16} />
             </button>
           </div>
-        ))}
+        ))} */}
+
+{alertas.length === 0 ? (
+          <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
+        ) : (
+          alertas.map((alerta) => (
+            <div 
+              key={alerta.id} 
+              className={`p-4 border rounded-lg flex items-start space-x-3 ${
+                alerta.tipo === 'exame' 
+                ? 'bg-red-50 border-red-100' 
+                : alerta.prioridade === 'consulta'
+                ? 'bg-amber-50 border-amber-100'
+                : 'bg-blue-50 border-blue-100'
+            }`}
+            >
+              <div className={`p-2 rounded-full ${
+                alerta.tipo === 'exame' 
+                  ? 'bg-purple-100 text-purple-600' 
+                  : alerta.tipo === 'medicamento'
+                  ? 'bg-green-100 text-green-600'
+                  : 'bg-blue-100 text-blue-600'
+              }`}>
+                {alerta.tipo === 'exame' && <FileText size={18} />}
+                {alerta.tipo === 'medicamento' && <Pill size={18} />}
+                {alerta.tipo === 'consulta' && <Calendar size={18} />}
+              </div>
+              
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-800">{alerta.tipo === 'exame' ? 'Marque seu exame de ' + alerta.titulo : 'Marque sua Consulta '+ alerta.titulo }</p>
+                <p className="text-xs text-gray-500 mt-1">{alerta.data}</p>
+              </div>
+              
+              <button className="text-gray-400 hover:text-primary-600">
+                <ArrowRight size={16} />
+              </button>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

@@ -17,7 +17,7 @@ const Agendamentos: React.FC = () => {
   const [tipoSelecionado, setTipoSelecionado] = useState<string | null>(null);
 // Novo estado para modal de realizado
 const [mostrarModalRealizado, setMostrarModalRealizado] = useState(false);
-const [abaAtiva, setAbaAtiva] = useState<'historico' | 'medicamentos' | 'exames'>('historico');
+const [abaAtiva, setAbaAtiva] = useState<'historico' | 'medicamentos' | 'exames' | 'retorno'>('historico');
 
 // Dados dos formulários
 const [dadosHistorico, setDadosHistorico] = useState({
@@ -29,7 +29,15 @@ const [dadosHistorico, setDadosHistorico] = useState({
 });
 
 const [dadosMedicamentos, setDadosMedicamentos] = useState([{ nome: '', dose: '', instrucoes: '', frequencia: '', horarios: '', inicio: '', fim: '', estoque: '', medico: '' }]);
-const [dadosExames, setDadosExames] = useState([{ titulo: '', laboratorio: '', data: '', hora: '', observacao: '' }]);
+const [dadosExames, setDadosExames] = useState([{ titulo: '', local: '', data: '', hora: '', profissional: '', observacao: '' }]);
+const [dadosRetorno, setDadosRetorno] = useState({
+  titulo: '',
+  local: '',
+  data: '',
+  hora: '',
+  profissional: '',
+  observacao: ''
+});
 
 const formatarTexto = (valor?: string) => {
   if (!valor) return "N/A";
@@ -76,16 +84,37 @@ const salvarRealizado = async () => {
     
   }
 
-    if(dadosExames){
+  if(dadosRetorno.data?.trim() !== ''){
+    await addDoc(collection(db, "agendamentos"), {
+      data: dadosRetorno.data,
+      hora: dadosRetorno.hora,
+      titulo: dadosHistorico.titulo,
+      profissional: dadosHistorico.medico,
+      local: dadosHistorico.instituicao,
+      tipo: 'consulta',
+      status: 'pendente'
+    });
+  }
+
+  const examesValidos = dadosExames.filter(
+    (med) =>
+      med.data?.trim() !== "" || // só salva se algum campo estiver preenchido
+      med.hora?.trim() !== "" ||
+      med.local?.trim() !== "" ||
+      med.observacao?.trim() !== "" ||
+      med.profissional?.trim() !== "" ||
+      med.titulo?.trim() !== ""
+  );
+
     // Salva exames com status "pendente"
-    for (const ex of dadosExames) {
+    for (const ex of examesValidos) {
       await addDoc(collection(db, "agendamentos"), {
         ...ex,
         tipo: "exame",
         status: "pendente",
       });
     }
-  }
+  
 
     setModalMensagem("Dados cadastrados com sucesso!");
     setMostrarModalMensagem(true);
@@ -401,7 +430,7 @@ const salvarRealizado = async () => {
 
       {/* Tabs */}
       <div className="flex border-b mb-4">
-        {['historico', 'medicamentos', 'exames'].map((aba) => (
+        {['historico', 'medicamentos', 'exames', 'retorno'].map((aba) => (
           <button
             key={aba}
             onClick={() => setAbaAtiva(aba as any)}
@@ -457,7 +486,7 @@ const salvarRealizado = async () => {
       {abaAtiva === 'medicamentos' && (
         <div>
           {dadosMedicamentos.map((med, idx) => (
-            <div key={idx} className="flex gap-2 mb-2">
+            <div key={idx} className="space-y-3">
               <input
                 type="text"
                 placeholder="Medicamento"
@@ -575,7 +604,7 @@ const salvarRealizado = async () => {
       {abaAtiva === 'exames' && (
         <div>
           {dadosExames.map((ex, idx) => (
-            <div key={idx} className="flex gap-2 mb-2">
+            <div key={idx} className="space-y-3">
               <input
                 type="text"
                 placeholder="Nome do Exame"
@@ -590,10 +619,10 @@ const salvarRealizado = async () => {
               <input
                 type="text"
                 placeholder="Laboratório "
-                value={ex.laboratorio}
+                value={ex.local}
                 onChange={(e) => {
                   const novo = [...dadosExames];
-                  novo[idx].laboratorio = e.target.value;
+                  novo[idx].local = e.target.value;
                   setDadosExames(novo);
                 }}
                 className="input flex-1"
@@ -610,6 +639,7 @@ const salvarRealizado = async () => {
                 }}
                 className="input flex-1"
               />
+              <br/>
               <input
                 type="time"
                 name='hora'
@@ -617,6 +647,17 @@ const salvarRealizado = async () => {
                 onChange={(e) => {
                   const novo = [...dadosExames];
                   novo[idx].hora = e.target.value;
+                  setDadosExames(novo);
+                }}
+                className="input flex-1"
+              />
+              <input
+                type="text"
+                name='Medico'
+                value={ex.profissional}
+                onChange={(e) => {
+                  const novo = [...dadosExames];
+                  novo[idx].profissional = e.target.value;
                   setDadosExames(novo);
                 }}
                 className="input flex-1"
@@ -635,11 +676,28 @@ const salvarRealizado = async () => {
             </div>
           ))}
           <button
-            onClick={() => setDadosExames([...dadosExames, { titulo: '', laboratorio: '', data: '', hora: '', observacao: '' }])}
+            onClick={() => setDadosExames([...dadosExames, { titulo: '', local: '', data: '', hora: '', profissional: '', observacao: '' }])}
             className="text-blue-600 text-sm mt-2"
           >
             + Adicionar exame
           </button>
+        </div>
+      )}
+
+      {abaAtiva === 'retorno' && (
+        <div className="space-y-3">
+          <input
+            type="date"
+            value={dadosRetorno.data}
+            onChange={(e) => setDadosRetorno({ ...dadosRetorno, data: e.target.value })}
+            className="input"
+          />
+          <input
+            type="time"
+            value={dadosRetorno.hora}
+            onChange={(e) => setDadosRetorno({ ...dadosRetorno, hora: e.target.value })}
+            className="input"
+          />
         </div>
       )}
 
@@ -692,6 +750,7 @@ const salvarRealizado = async () => {
               onChange={(e) => setFiltroStatus(e.target.value)}
             >
               <option value="todos">Todos</option>
+              <option value="pendente">Pendente</option>
               <option value="agendado">Agendados</option>
               <option value="confirmado">Confirmados</option>
               <option value="realizado">Realizados</option>
@@ -720,7 +779,7 @@ const salvarRealizado = async () => {
                         </span>
                         
                         <span className={`inline-block px-2 py-1 text-xs rounded-full ${
-                          agendamento.status === 'agendado' 
+                          agendamento.status === 'agendado' || agendamento.status === 'pendente'
                             ? 'bg-gray-100 text-gray-800' 
                             : agendamento.status === 'confirmado'
                             ? 'bg-green-100 text-green-800'
@@ -766,7 +825,7 @@ const salvarRealizado = async () => {
                       )}
                     </div>
                     
-                    {(agendamento.status === 'agendado' || agendamento.status === 'confirmado') && (
+                    {(agendamento.status === 'agendado' || agendamento.status === 'confirmado' || agendamento.status === 'pendente') && (
                       <div className="flex flex-col sm:flex-row gap-2">
                         <button
                           onClick={() => atualizarStatus(agendamento.id, 'confirmado')}
