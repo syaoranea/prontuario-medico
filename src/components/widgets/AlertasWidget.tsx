@@ -96,7 +96,7 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
           </div>
         ))} */}
 
-{alertas.length === 0 ? (
+        {(!alertas || alertas.length === 0) ? (
           <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
         ) : (
           alertas.map((alerta) => (

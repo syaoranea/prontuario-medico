@@ -9,6 +9,8 @@ import Agendamentos from './pages/Agendamentos';
 import Metricas from './pages/Metricas';
 import Documentos from './pages/Documentos';
 import Configuracoes from './pages/Configuracoes';
+import Profissionais from './pages/Profissionais';
+import RotinaCuidados from './pages/RotinaCuidados';
 import { UserProvider } from './config/bd/userContext';
 
 function App() {
@@ -25,6 +27,8 @@ function App() {
           <Route path="/metricas" element={<Metricas />} />
           <Route path="/documentos" element={<Documentos />} />
           <Route path="/configuracoes" element={<Configuracoes />} />
+          <Route path="/profissionais" element={<Profissionais />} />
+          <Route path="/rotina" element={<RotinaCuidados />} />
         </Routes>
       </Layout>
       </UserProvider>

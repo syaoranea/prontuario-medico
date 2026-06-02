@@ -21,7 +21,8 @@ const Medicamentos: React.FC = () => {
     inicio: '',
     fim: '',
     estoque: 0,
-    medico: ''
+    medico: '',
+    status: 'ativo'
   });
   const [feedbackModal, setFeedbackModal] = useState({
     open: false,
@@ -74,7 +75,8 @@ const handleCreateMedicamento = async () => {
       inicio: '',
       fim: '',
       estoque: 0,
-      medico: ''
+      medico: '',
+      status: 'ativo'
     });
     fetchMedicamentos(); // chama sua função de atualizar a tela
   } catch (error) {
@@ -90,7 +92,7 @@ const fetchMedicamentos = async () => {
       id: doc.id,
       ...doc.data(),
     })) as Medicamento[];
-
+    console.log('Medicamentos:', dados, typeof dados);
     setMedicamentos(dados);
   } catch (error) {
     console.error('Erro ao buscar medicamentos:', error);
@@ -107,15 +109,13 @@ const carregarMedicamentos = async () => {
 
     // Ordena pelo último inserido primeiro
     dados = dados.reverse(); // inverte o array, assumindo que os últimos docs estão no final
+    console.log('Medicamentos:', dados, typeof dados);
+
     setMedicamentos(dados);
   } catch (error) {
     console.error('Erro ao buscar medicamentos:', error);
   }
 };
-
-
-
-
   
 const handleUpdateMedicamento = async () => {
   if (!medicamentoEditandoId) return;
@@ -143,7 +143,8 @@ const handleUpdateMedicamento = async () => {
       inicio: '',
       fim: '',
       estoque: 0,
-      medico: ''
+      medico: '',
+      status: 'ativo'
     });
     fetchMedicamentos();
   } catch (error) {
@@ -165,11 +166,10 @@ function closeModal() {
     inicio: '',
     fim: '',
     estoque: 0,
-    medico: ''
+    medico: '',
+    status: 'ativo'
   });
 }
-
-
   const abrirEdicao = (medicamento: Medicamento) => {
     setFormData({
       nome: medicamento.nome,
@@ -180,7 +180,8 @@ function closeModal() {
       inicio: medicamento.inicio,
       fim: medicamento.fim || '',
       estoque: medicamento.estoque,
-      medico: medicamento.medico
+      medico: medicamento.medico,
+      status: 'ativo'
     });
     setIsEditando(true);
     setMedicamentoEditandoId(medicamento.id);

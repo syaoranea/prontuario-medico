@@ -44,6 +44,7 @@ interface MedicamentoWidgetProps {
 const MedicamentosWidget: React.FC<MedicamentoWidgetProps> = ({
   medicamentos,
 }) => {
+  console.log('MedicamentosWidget prop:', medicamentos);
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
       <div className="flex items-center justify-between mb-6">
@@ -52,68 +53,77 @@ const MedicamentosWidget: React.FC<MedicamentoWidgetProps> = ({
       </div>
       
       <div className="space-y-4">
-        {medicamentos.map((medicamento) => (
-          <div 
-            key={medicamento.id} 
-            className={`p-4 border rounded-lg transition-colors ${
-              medicamento.status === 'atrasado' 
-                ? 'border-red-200 bg-red-50' 
-                : medicamento.status === 'tomado'
-                ? 'border-gray-100 bg-gray-50'
-                : 'border-gray-100 hover:bg-gray-50'
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex items-center">
-                <div className={`p-2 rounded-lg mr-3 ${
-                  medicamento.status === 'atrasado' 
-                    ? 'bg-red-100 text-red-600' 
-                    : medicamento.status === 'tomado'
-                    ? 'bg-green-100 text-green-600'
-                    : 'bg-blue-100 text-blue-600'
-                }`}>
-                  <Pill size={20} />
+        {Array.isArray(medicamentos) ? medicamentos.map((medicamento, mIdx) => {
+          if (!medicamento) return null;
+          
+          // Defesa extra para o array de horários
+          const listaHorarios = Array.isArray(medicamento.horarios) ? medicamento.horarios : [];
+          
+          return (
+            <div 
+              key={medicamento.id || mIdx} 
+              className={`p-4 border rounded-lg transition-colors ${
+                medicamento.status === 'atrasado' 
+                  ? 'border-red-200 bg-red-50' 
+                  : medicamento.status === 'tomado'
+                  ? 'border-gray-100 bg-gray-50'
+                  : 'border-gray-100 hover:bg-gray-50'
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center">
+                  <div className={`p-2 rounded-lg mr-3 ${
+                    medicamento.status === 'atrasado' 
+                      ? 'bg-red-100 text-red-600' 
+                      : medicamento.status === 'tomado'
+                      ? 'bg-green-100 text-green-600'
+                      : 'bg-blue-100 text-blue-600'
+                  }`}>
+                    <Pill size={20} />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-800">{medicamento.nome || 'Sem nome'}</h3>
+                    <p className="text-sm text-gray-500">{medicamento.dosagem} - {medicamento.frequencia}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-medium text-gray-800">{medicamento.nome}</h3>
-                  <p className="text-sm text-gray-500">{medicamento.dosagem} - {medicamento.frequencia}</p>
-                </div>
+                
+                {medicamento.status === 'pendente' && (
+                  <button className="bg-primary-100 text-primary-600 hover:bg-primary-200 p-2 rounded-full transition-colors">
+                    <Check size={18} />
+                  </button>
+                )}
               </div>
               
-              {medicamento.status === 'pendente' && (
-                <button className="bg-primary-100 text-primary-600 hover:bg-primary-200 p-2 rounded-full transition-colors">
-                  <Check size={18} />
-                </button>
-              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {listaHorarios.map((horario, index) => (
+                  <div 
+                    key={index} 
+                    className={`flex items-center text-xs rounded-full px-3 py-1 ${
+                      medicamento.status === 'tomado' 
+                        ? 'bg-green-100 text-green-700' 
+                        : medicamento.status === 'atrasado'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    <Clock size={12} className="mr-1" />
+                    {typeof horario === 'string' ? horario : JSON.stringify(horario)}
+                    
+                    {medicamento.status === 'tomado' && (
+                      <Check size={12} className="ml-1 text-green-600" />
+                    )}
+                    
+                    {medicamento.status === 'atrasado' && (
+                      <X size={12} className="ml-1 text-red-600" />
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
-            
-            <div className="mt-3 flex flex-wrap gap-2">
-              {medicamento.horarios.map((horario, index) => (
-                <div 
-                  key={index} 
-                  className={`flex items-center text-xs rounded-full px-3 py-1 ${
-                    medicamento.status === 'tomado' 
-                      ? 'bg-green-100 text-green-700' 
-                      : medicamento.status === 'atrasado'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-gray-100 text-gray-700'
-                  }`}
-                >
-                  <Clock size={12} className="mr-1" />
-                  {horario}
-                  
-                  {medicamento.status === 'tomado' && (
-                    <Check size={12} className="ml-1 text-green-600" />
-                  )}
-                  
-                  {medicamento.status === 'atrasado' && (
-                    <X size={12} className="ml-1 text-red-600" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        }) : (
+          <p className="text-sm text-gray-500 italic">Carregando medicamentos ou dados inválidos...</p>
+        )}
       </div>
       
       <div className="mt-6">

@@ -1,8 +1,8 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  Home, User, FileText, Pill, Calendar, LineChart, 
-  FolderClosed, Settings, Menu, X 
+import {
+  Home, User, FileText, Pill, Calendar, LineChart,
+  FolderClosed, Settings, Menu, X, Users, Heart
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -21,6 +21,8 @@ const Sidebar: React.FC = () => {
     { path: '/agendamentos', icon: <Calendar size={20} />, label: 'Agendamentos' },
     { path: '/metricas', icon: <LineChart size={20} />, label: 'Métricas' },
     { path: '/documentos', icon: <FolderClosed size={20} />, label: 'Documentos' },
+    { path: '/profissionais', icon: <Users size={20} />, label: 'Profissionais' },
+    { path: '/rotina', icon: <Heart size={20} />, label: 'Rotina Home Care' },
     { path: '/configuracoes', icon: <Settings size={20} />, label: 'Configurações' },
   ];
 
