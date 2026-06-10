@@ -2,7 +2,7 @@ import React, { useState, useEffect, Fragment } from 'react';
 import {
   ClipboardList, CheckSquare, History, Plus, Edit2, Trash2, Save,
   Sun, Cloud, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
-  ChevronUp, Clock, X, RefreshCw, Heart, Activity
+  ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -132,6 +132,7 @@ const RotinaCuidados: React.FC = () => {
   const [execucaoExpandida, setExecucaoExpandida] = useState<string | null>(null);
 
   // Modal add/edit item
+  const [modalRegrasAberto, setModalRegrasAberto] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [itemEditandoId, setItemEditandoId] = useState<string | null>(null);
   const [formItem, setFormItem] = useState({
@@ -297,7 +298,7 @@ const RotinaCuidados: React.FC = () => {
   };
 
   const salvarChecklist = async () => {
-    if (!auxiliarNome.trim()) { mostrarFeedback('erro', 'Informe o nome do auxiliar antes de salvar.'); return; }
+    if (!auxiliarNome.trim()) { mostrarFeedback('erro', 'Informe o nome do técnico antes de salvar.'); return; }
     setSalvando(true);
     try {
       const itensTurno = itens.filter(i => i.turno === turnoChecklist && i.ativo);
@@ -369,20 +370,30 @@ const RotinaCuidados: React.FC = () => {
           <p className="text-sm text-gray-500 mt-1">AME tipo 2 · BIPAP noturno · 3 turnos 24h</p>
         </div>
 
-        {/* Mode toggle */}
-        <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1 self-start sm:self-auto">
+        <div className="flex items-center gap-3 self-start sm:self-auto flex-wrap">
+          {/* Regras da Casa */}
           <button
-            onClick={() => setModo('paciente')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${modo === 'paciente' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setModalRegrasAberto(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all"
           >
-            <User size={15} /> Paciente
+            <ScrollText size={15} /> Regras da casa
           </button>
-          <button
-            onClick={() => setModo('auxiliar')}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${modo === 'auxiliar' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-          >
-            <Stethoscope size={15} /> Auxiliar
-          </button>
+
+          {/* Mode toggle */}
+          <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1">
+            <button
+              onClick={() => setModo('paciente')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${modo === 'paciente' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <User size={15} /> Paciente
+            </button>
+            <button
+              onClick={() => setModo('auxiliar')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${modo === 'auxiliar' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Stethoscope size={15} /> Técnico
+            </button>
+          </div>
         </div>
       </div>
 
@@ -518,10 +529,10 @@ const RotinaCuidados: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-gray-500 block mb-1">Auxiliar responsável</label>
+              <label className="text-xs font-medium text-gray-500 block mb-1">Técnico responsável</label>
               <input
                 type="text"
-                placeholder="Nome do auxiliar"
+                placeholder="Nome do técnico"
                 value={auxiliarNome}
                 onChange={e => { setAuxiliarNome(e.target.value); setChecklistSalvo(false); }}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
@@ -631,7 +642,7 @@ const RotinaCuidados: React.FC = () => {
             <div className="text-center py-16 text-gray-400">
               <History size={40} className="mx-auto mb-3 opacity-30" />
               <p className="text-sm">Nenhum registro ainda.</p>
-              <p className="text-xs mt-1">Os check-ins salvos pelo auxiliar aparecerão aqui.</p>
+              <p className="text-xs mt-1">Os check-ins salvos pelo técnico aparecerão aqui.</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -658,7 +669,7 @@ const RotinaCuidados: React.FC = () => {
                           <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
                         </div>
                         <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-gray-500">Auxiliar: {exec.auxiliar || '—'}</span>
+                          <span className="text-xs text-gray-500">Técnico: {exec.auxiliar || '—'}</span>
                           <span className={`text-xs font-medium ${pct === 100 ? 'text-green-600' : 'text-amber-600'}`}>{concluidos}/{total} itens ({pct}%)</span>
                         </div>
                       </div>
@@ -721,6 +732,65 @@ const RotinaCuidados: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* ── Modal Regras da Casa ────────────────────────────────────────── */}
+      <Transition appear show={modalRegrasAberto} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setModalRegrasAberto(false)}>
+          <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0" enterTo="opacity-100" leave="ease-in duration-150" leaveFrom="opacity-100" leaveTo="opacity-0">
+            <div className="fixed inset-0 bg-black/30" />
+          </Transition.Child>
+          <div className="fixed inset-0 overflow-y-auto flex items-center justify-center p-4">
+            <Transition.Child as={Fragment} enter="ease-out duration-200" enterFrom="opacity-0 scale-95" enterTo="opacity-100 scale-100" leave="ease-in duration-150" leaveFrom="opacity-100 scale-100" leaveTo="opacity-0 scale-95">
+              <Dialog.Panel className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-5">
+                  <Dialog.Title className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                    <ScrollText size={18} className="text-amber-600" />
+                    Regras da casa — plantão 12h
+                  </Dialog.Title>
+                  <button onClick={() => setModalRegrasAberto(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {[
+                    { n: 1, titulo: 'Troca de calçado obrigatória', desc: 'Sapatilha ou chinelo exclusivo ao entrar. Calçado da rua fica na entrada.' },
+                    { n: 2, titulo: 'Higiene das mãos', desc: 'Álcool gel ao entrar, antes e após cada procedimento, sempre que for atender o paciente.' },
+                    { n: 3, titulo: 'Evitar fazer barulho', desc: 'Durante 10h30 até as 11h30 paciente está em reunião.' },
+                    { n: 4, titulo: 'Visitas não são permitidas', desc: 'O técnico não pode receber visitas pessoais durante o plantão.' },
+                    { n: 5, titulo: 'Descanso', desc: 'O descanso de 1h pode ser feito no quarto.' },
+                    { n: 6, titulo: 'Cozinha com responsabilidade', desc: 'Lavar e guardar tudo que usar.' },
+                    { n: 7, titulo: 'Privacidade do paciente', desc: 'Fotos, vídeos e informações sobre o paciente e a casa são confidenciais.' },
+                    { n: 8, titulo: 'Doença: avisar com antecedência', desc: 'Se estiver com sintomas gripais ou febre, avisar a empresa de home care com antecedência para substituição.' },
+                    { n: 9, titulo: 'Respeito mútuo', desc: 'Este é o lar do paciente. Barulho, conversas altas e uso da TV em volume alto não são permitidos após as 22h.' },
+                    { n: 10, titulo: 'Trocar de roupa ao começar plantão', desc: 'Ao chegar, trocar a roupa da rua por uniforme limpo antes de entrar no quarto do paciente. Roupa de rua pode carregar agentes contaminantes — especialmente importante para AME tipo 2 com risco respiratório. O técnico deve trazer seu próprio uniforme limpo a cada plantão.', obs: 'Vestir o uniforme por cima da blusa.' },
+                  ].map(({ n, titulo, desc, obs }) => (
+                    <div key={n} className="flex gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                      <span className="shrink-0 w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center mt-0.5">{n}</span>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{titulo}</p>
+                        <p className="text-sm text-gray-600 mt-0.5 leading-relaxed">{desc}</p>
+                        {obs && (
+                          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 mt-2">
+                            <span className="font-semibold">Obs:</span> {obs}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  onClick={() => setModalRegrasAberto(false)}
+                  className="mt-5 w-full px-4 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 transition-colors"
+                >
+                  Entendido
+                </button>
+              </Dialog.Panel>
+            </Transition.Child>
+          </div>
+        </Dialog>
+      </Transition>
 
       {/* ── Modal add/edit item ──────────────────────────────────────────── */}
       <Transition appear show={modalAberto} as={Fragment}>
