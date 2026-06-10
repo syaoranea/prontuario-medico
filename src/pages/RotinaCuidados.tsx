@@ -1,7 +1,7 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import {
   ClipboardList, CheckSquare, History, Plus, Edit2, Trash2, Save,
-  Sun, Cloud, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
+  Sun, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
   ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText
 } from 'lucide-react';
 import {
@@ -40,35 +40,33 @@ const ROTINA_INICIAL: Omit<RotinaItem, 'id'>[] = [
   { turno: 'manha', secao: 'Retorno ao trabalho', horario: '14:00', descricao: 'Oferecer água — registrar aceitação', responsavel: 'tecnico', ordem: 19, ativo: true },
   { turno: 'manha', secao: 'Retorno ao trabalho', horario: '14:45', descricao: 'Registrar evolução do turno da manhã e preparar passagem', responsavel: 'tecnico', ordem: 20, ativo: true },
 
-  // ── TARDE ──────────────────────────────────────────────────────────────────
-  { turno: 'tarde', secao: 'Passagem de plantão', horario: '15:00', descricao: 'Receber informações do turno da manhã: sinais vitais, alimentação, posições, intercorrências', responsavel: 'tecnico', ordem: 1, ativo: true },
-  { turno: 'tarde', secao: 'Passagem de plantão', horario: '15:05', descricao: 'Informar como me sinto: cansaço, dor, disposição respiratória', responsavel: 'paciente', ordem: 2, ativo: true },
-  { turno: 'tarde', secao: 'Período de trabalho', horario: '15:00', descricao: 'Oferecer água — registrar', responsavel: 'tecnico', ordem: 3, ativo: true },
-  { turno: 'tarde', secao: 'Período de trabalho', horario: '15:30', descricao: 'Lanche da tarde — oferecer sem interromper trabalho, respeitar se quiser continuar primeiro', responsavel: 'tecnico', ordem: 4, ativo: true },
-  { turno: 'tarde', secao: 'Período de trabalho', horario: '16:00', descricao: 'Aferir sinais vitais — registrar. Oferecer água', responsavel: 'tecnico', ordem: 5, ativo: true },
-  { turno: 'tarde', secao: 'Período de trabalho', horario: '16:30', descricao: 'Administrar risdiplam — diluído conforme orientação médica. Registrar horário e lote. Não atrasar esta dose', responsavel: 'tecnico', ordem: 6, ativo: true },
-  { turno: 'tarde', secao: 'Período de trabalho', horario: '17:00', descricao: 'Oferecer água', responsavel: 'tecnico', ordem: 7, ativo: true },
-  { turno: 'tarde', secao: 'Período de trabalho', horario: '18:00', descricao: 'Oferecer água. Preparar banheiro e cadeira de banho para o banho das 18h30', responsavel: 'tecnico', ordem: 8, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '18:20', descricao: 'Preparar banheiro: água aquecida, cadeira de banho posicionada, toalha, roupa limpa, produtos de higiene — tudo acessível antes de transferir', responsavel: 'tecnico', ordem: 9, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '18:25', descricao: 'Transferência da cadeira de rodas para a cadeira de banho com segurança — dois técnicos se disponível', responsavel: 'tecnico', ordem: 10, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '18:30', descricao: 'Banho completo — respeitar privacidade, temperatura da água confortável, sem pressa', responsavel: 'tecnico', ordem: 11, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '18:30', descricao: 'Informar se água estiver quente/fria demais ou qualquer desconforto', responsavel: 'paciente', ordem: 12, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '18:50', descricao: 'Inspeção completa da pele durante secagem — sacro, calcâneos, maléolos, joelhos, occipital. Registrar qualquer alteração', responsavel: 'tecnico', ordem: 13, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '18:55', descricao: 'Hidratante corporal nas proeminências. Vestir roupa limpa. Transferência de volta à cadeira de rodas ou para a cama', responsavel: 'tecnico', ordem: 14, ativo: true },
-  { turno: 'tarde', secao: 'Banho', horario: '19:00', descricao: 'Aproveitar que estou fora da cama: trocar toda a roupa de cama agora', responsavel: 'tecnico', ordem: 15, ativo: true },
-  { turno: 'tarde', secao: 'Jantar', horario: '19:25', descricao: 'Posicionar para refeição — cabeceira 45° se já na cama, ou postura adequada na cadeira', responsavel: 'tecnico', ordem: 16, ativo: true },
-  { turno: 'tarde', secao: 'Jantar', horario: '19:30', descricao: 'Levar jantar à boca — no meu ritmo. Oferecer água durante a refeição', responsavel: 'tecnico', ordem: 17, ativo: true },
-  { turno: 'tarde', secao: 'Jantar', horario: '20:15', descricao: 'Higiene oral pós-jantar', responsavel: 'tecnico', ordem: 18, ativo: true },
-  { turno: 'tarde', secao: 'Jantar', horario: '20:15', descricao: 'Aferir sinais vitais — 2ª aferição do turno da tarde. Registrar', responsavel: 'tecnico', ordem: 19, ativo: true },
-  { turno: 'tarde', secao: 'Jantar', horario: '20:30', descricao: 'Transferência para cama se ainda não estiver. Posicionamento com coxins de apoio', responsavel: 'tecnico', ordem: 20, ativo: true },
-  { turno: 'tarde', secao: 'Preparação para BIPAP', horario: '21:00', descricao: 'Mudança de decúbito — registrar posição. Verificar calcâneos flutuantes e coxins', responsavel: 'tecnico', ordem: 21, ativo: true },
-  { turno: 'tarde', secao: 'Preparação para BIPAP', horario: '22:30', descricao: 'Posicionamento final para dormir — decúbito preferido, coxins, cabeceira adequada', responsavel: 'tecnico', ordem: 22, ativo: true },
-  { turno: 'tarde', secao: 'Preparação para BIPAP', horario: '23:00', descricao: 'Conectar BIPAP — ajustar máscara sem pressão excessiva, verificar ausência de vazamento', responsavel: 'tecnico', ordem: 23, ativo: true },
-  { turno: 'tarde', secao: 'Preparação para BIPAP', horario: '23:00', descricao: 'Avisar se máscara estiver desconfortável ou com vazamento — não tolerar em silêncio', responsavel: 'paciente', ordem: 24, ativo: true },
-  { turno: 'tarde', secao: 'Preparação para BIPAP', horario: '23:10', descricao: 'Confirmar SpO₂ estável após início do BIPAP — registrar. Registrar evolução e preparar passagem', responsavel: 'tecnico', ordem: 25, ativo: true },
+  // ── MANHÃ (continuação) — itens anteriormente no turno tarde 15h–18h55 ────────
+  { turno: 'manha', secao: 'Período de trabalho', horario: '15:00', descricao: 'Oferecer água — registrar', responsavel: 'tecnico', ordem: 21, ativo: true },
+  { turno: 'manha', secao: 'Período de trabalho', horario: '15:30', descricao: 'Lanche da tarde — oferecer sem interromper trabalho, respeitar se quiser continuar primeiro', responsavel: 'tecnico', ordem: 22, ativo: true },
+  { turno: 'manha', secao: 'Período de trabalho', horario: '16:00', descricao: 'Aferir sinais vitais — registrar. Oferecer água', responsavel: 'tecnico', ordem: 23, ativo: true },
+  { turno: 'manha', secao: 'Período de trabalho', horario: '16:30', descricao: 'Administrar risdiplam — diluído conforme orientação médica. Registrar horário e lote. Não atrasar esta dose', responsavel: 'tecnico', ordem: 24, ativo: true },
+  { turno: 'manha', secao: 'Período de trabalho', horario: '17:00', descricao: 'Oferecer água', responsavel: 'tecnico', ordem: 25, ativo: true },
+  { turno: 'manha', secao: 'Período de trabalho', horario: '18:00', descricao: 'Oferecer água. Preparar banheiro e cadeira de banho para o banho das 18h30', responsavel: 'tecnico', ordem: 26, ativo: true },
+  { turno: 'manha', secao: 'Banho', horario: '18:20', descricao: 'Preparar banheiro: água aquecida, cadeira de banho posicionada, toalha, roupa limpa, produtos de higiene — tudo acessível antes de transferir', responsavel: 'tecnico', ordem: 27, ativo: true },
+  { turno: 'manha', secao: 'Banho', horario: '18:25', descricao: 'Transferência da cadeira de rodas para a cadeira de banho com segurança — dois técnicos se disponível', responsavel: 'tecnico', ordem: 28, ativo: true },
+  { turno: 'manha', secao: 'Banho', horario: '18:30', descricao: 'Banho completo — respeitar privacidade, temperatura da água confortável, sem pressa', responsavel: 'tecnico', ordem: 29, ativo: true },
+  { turno: 'manha', secao: 'Banho', horario: '18:30', descricao: 'Informar se água estiver quente/fria demais ou qualquer desconforto', responsavel: 'paciente', ordem: 30, ativo: true },
+  { turno: 'manha', secao: 'Banho', horario: '18:50', descricao: 'Inspeção completa da pele durante secagem — sacro, calcâneos, maléolos, joelhos, occipital. Registrar qualquer alteração', responsavel: 'tecnico', ordem: 31, ativo: true },
+  { turno: 'manha', secao: 'Banho', horario: '18:55', descricao: 'Hidratante corporal nas proeminências. Vestir roupa limpa. Transferência de volta à cadeira de rodas ou para a cama', responsavel: 'tecnico', ordem: 32, ativo: true },
 
   // ── NOITE ──────────────────────────────────────────────────────────────────
-  { turno: 'noite', secao: 'Passagem de plantão', horario: '23:00', descricao: 'Receber informações: BIPAP conectado e funcionando, SpO₂, posição, intercorrências do turno da tarde', responsavel: 'tecnico', ordem: 1, ativo: true },
+  { turno: 'noite', secao: 'Início do turno', horario: '19:00', descricao: 'Aproveitar que estou fora da cama: trocar toda a roupa de cama agora', responsavel: 'tecnico', ordem: 1, ativo: true },
+  { turno: 'noite', secao: 'Jantar', horario: '19:25', descricao: 'Posicionar para refeição — cabeceira 45° se já na cama, ou postura adequada na cadeira', responsavel: 'tecnico', ordem: 2, ativo: true },
+  { turno: 'noite', secao: 'Jantar', horario: '19:30', descricao: 'Levar jantar à boca — no meu ritmo. Oferecer água durante a refeição', responsavel: 'tecnico', ordem: 3, ativo: true },
+  { turno: 'noite', secao: 'Jantar', horario: '20:15', descricao: 'Higiene oral pós-jantar', responsavel: 'tecnico', ordem: 4, ativo: true },
+  { turno: 'noite', secao: 'Jantar', horario: '20:15', descricao: 'Aferir sinais vitais — 2ª aferição do turno da noite. Registrar', responsavel: 'tecnico', ordem: 5, ativo: true },
+  { turno: 'noite', secao: 'Jantar', horario: '20:30', descricao: 'Transferência para cama se ainda não estiver. Posicionamento com coxins de apoio', responsavel: 'tecnico', ordem: 6, ativo: true },
+  { turno: 'noite', secao: 'Preparação para BIPAP', horario: '21:00', descricao: 'Mudança de decúbito — registrar posição. Verificar calcâneos flutuantes e coxins', responsavel: 'tecnico', ordem: 7, ativo: true },
+  { turno: 'noite', secao: 'Preparação para BIPAP', horario: '22:30', descricao: 'Posicionamento final para dormir — decúbito preferido, coxins, cabeceira adequada', responsavel: 'tecnico', ordem: 8, ativo: true },
+  { turno: 'noite', secao: 'Preparação para BIPAP', horario: '23:00', descricao: 'Conectar BIPAP — ajustar máscara sem pressão excessiva, verificar ausência de vazamento', responsavel: 'tecnico', ordem: 9, ativo: true },
+  { turno: 'noite', secao: 'Preparação para BIPAP', horario: '23:00', descricao: 'Avisar se máscara estiver desconfortável ou com vazamento — não tolerar em silêncio', responsavel: 'paciente', ordem: 10, ativo: true },
+  { turno: 'noite', secao: 'Preparação para BIPAP', horario: '23:10', descricao: 'Confirmar SpO₂ estável após início do BIPAP — registrar. Registrar evolução e preparar passagem', responsavel: 'tecnico', ordem: 11, ativo: true },
+  { turno: 'noite', secao: 'Passagem de plantão', horario: '19:00', descricao: 'Receber informações do plantão anterior: sinais vitais, alimentação, posições, intercorrências', responsavel: 'tecnico', ordem: 12, ativo: true },
   { turno: 'noite', secao: 'Monitoramento noturno', horario: '00:00', descricao: 'Aferir SpO₂ e FR — registrar sem acordar se estiver dormindo bem', responsavel: 'tecnico', ordem: 2, ativo: true },
   { turno: 'noite', secao: 'Monitoramento noturno', horario: '01:00', descricao: 'Mudança de decúbito com cuidado para não deslocar máscara do BIPAP — registrar posição', responsavel: 'tecnico', ordem: 3, ativo: true },
   { turno: 'noite', secao: 'Monitoramento noturno', horario: '03:00', descricao: 'Mudança de decúbito + verificar ajuste e vedação da máscara do BIPAP', responsavel: 'tecnico', ordem: 4, ativo: true },
@@ -81,9 +79,8 @@ const ROTINA_INICIAL: Omit<RotinaItem, 'id'>[] = [
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 const TURNO_CONFIG = {
-  manha: { label: 'Manhã', sublabel: '07h30 – 15h', icon: Sun, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200' },
-  tarde: { label: 'Tarde', sublabel: '15h – 23h', icon: Cloud, color: 'text-blue-500', bg: 'bg-blue-50', border: 'border-blue-200' },
-  noite: { label: 'Noite', sublabel: '23h – 07h30', icon: Moon, color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-200' },
+  manha: { label: 'Manhã', sublabel: '7h – 19h', icon: Sun, color: 'text-amber-500', bg: 'bg-amber-50', border: 'border-amber-200' },
+  noite: { label: 'Noite', sublabel: '19h – 7h', icon: Moon, color: 'text-indigo-500', bg: 'bg-indigo-50', border: 'border-indigo-200' },
 };
 
 const RESPONSAVEL_CONFIG = {
@@ -110,7 +107,7 @@ const formatarTurnoLabel = (turno: string) => {
 const RotinaCuidados: React.FC = () => {
   const [abaAtiva, setAbaAtiva] = useState<'rotina' | 'checklist' | 'historico'>('rotina');
   const [modo, setModo] = useState<'paciente' | 'auxiliar'>('paciente');
-  const [turnoAtivo, setTurnoAtivo] = useState<'manha' | 'tarde' | 'noite'>('manha');
+  const [turnoAtivo, setTurnoAtivo] = useState<'manha' | 'noite'>('manha');
 
   // Routine items
   const [itens, setItens] = useState<RotinaItem[]>([]);
@@ -118,7 +115,7 @@ const RotinaCuidados: React.FC = () => {
 
   // Checklist state
   const [dataChecklist, setDataChecklist] = useState(hoje());
-  const [turnoChecklist, setTurnoChecklist] = useState<'manha' | 'tarde' | 'noite'>('manha');
+  const [turnoChecklist, setTurnoChecklist] = useState<'manha' | 'noite'>('manha');
   const [auxiliarNome, setAuxiliarNome] = useState('');
   const [checkMap, setCheckMap] = useState<Record<string, { concluido: boolean; observacao: string; horarioConcluido?: string }>>({});
   const [obsGeral, setObsGeral] = useState('');
@@ -136,7 +133,7 @@ const RotinaCuidados: React.FC = () => {
   const [modalAberto, setModalAberto] = useState(false);
   const [itemEditandoId, setItemEditandoId] = useState<string | null>(null);
   const [formItem, setFormItem] = useState({
-    turno: 'manha' as RotinaItem['turno'],
+    turno: 'manha' as 'manha' | 'noite',
     secao: '',
     horario: '',
     descricao: '',
@@ -341,7 +338,7 @@ const RotinaCuidados: React.FC = () => {
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const itensPorTurnoSecao = (turno: 'manha' | 'tarde' | 'noite') => {
+  const itensPorTurnoSecao = (turno: 'manha' | 'noite') => {
     const filtrados = itens.filter(i => i.turno === turno && i.ativo);
     const secoes: Record<string, RotinaItem[]> = {};
     filtrados.forEach(item => {
@@ -434,7 +431,7 @@ const RotinaCuidados: React.FC = () => {
 
           {/* Turno selector */}
           <div className="flex gap-2 mb-5">
-            {(['manha', 'tarde', 'noite'] as const).map(t => {
+            {(['manha', 'noite'] as const).map(t => {
               const cfg = TURNO_CONFIG[t];
               const Icon = cfg.icon;
               return (
@@ -523,9 +520,8 @@ const RotinaCuidados: React.FC = () => {
                 onChange={e => { setTurnoChecklist(e.target.value as typeof turnoChecklist); setChecklistSalvo(false); }}
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
               >
-                <option value="manha">☀️ Manhã (07h30–15h)</option>
-                <option value="tarde">🌤 Tarde (15h–23h)</option>
-                <option value="noite">🌙 Noite (23h–07h30)</option>
+                <option value="manha">☀️ Manhã (7h–19h)</option>
+                <option value="noite">🌙 Noite (19h–7h)</option>
               </select>
             </div>
             <div>
@@ -816,9 +812,8 @@ const RotinaCuidados: React.FC = () => {
                       <label className="text-xs font-medium text-gray-500 block mb-1">Turno</label>
                       <select value={formItem.turno} onChange={e => setFormItem(p => ({ ...p, turno: e.target.value as typeof formItem.turno }))}
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300">
-                        <option value="manha">☀️ Manhã</option>
-                        <option value="tarde">🌤 Tarde</option>
-                        <option value="noite">🌙 Noite</option>
+                        <option value="manha">☀️ Manhã (7h–19h)</option>
+                        <option value="noite">🌙 Noite (19h–7h)</option>
                       </select>
                     </div>
                     <div>

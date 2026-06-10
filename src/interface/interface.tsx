@@ -63,7 +63,7 @@ export interface Profissional {
 
 export interface RotinaItem {
   id: string;
-  turno: 'manha' | 'tarde' | 'noite';
+  turno: 'manha' | 'noite';
   secao: string;
   horario: string;
   descricao: string;
@@ -82,7 +82,7 @@ export interface ItemExecucao {
 export interface RotinaExecucao {
   id: string;
   data: string; // YYYY-MM-DD
-  turno: 'manha' | 'tarde' | 'noite';
+  turno: 'manha' | 'noite';
   auxiliar: string;
   itens: ItemExecucao[];
   observacaoGeral: string;
