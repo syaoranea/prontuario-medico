@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Regras do Firebase Storage — anexos clínicos (exames, laudos, fotos de perfil).
+// Documentos de saúde são dado sensível: nada de acesso anônimo.
+// Apenas usuários autenticados leem/gravam nas pastas conhecidas; o resto é negado.
+//
+// Observação: para distinguir família (somente leitura) da equipe clínica também no
+// Storage, o caminho recomendado é usar Custom Claims no token de auth e checar
+// request.auth.token.papel aqui. Por ora exigimos apenas autenticação, o que já
+// remove o acesso público atual.
+//
+// Deploy: firebase deploy --only storage
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /documentos/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    match /perfil/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

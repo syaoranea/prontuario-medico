@@ -4,8 +4,13 @@ import { Pill, Trash2, Plus, Bell, Calendar, Clock, FileEdit } from 'lucide-reac
 import { collection, getDocs, deleteDoc, doc, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Medicamento } from '../interface/interface';
+import { useConfirm } from '../components/ConfirmProvider';
+import { useAuditoria } from '../config/auditoria';
+import { formatarDataBR, paraISO } from '../utils/datas';
 
 const Medicamentos: React.FC = () => {
+  const { confirmar } = useConfirm();
+  const { registrar } = useAuditoria();
   const [medicamentos, setMedicamentos] = useState<Medicamento[]>([]);
   const [filtro, setFiltro] = useState<'todos' | 'ativo' | 'pausado' | 'finalizado'>('todos');
   const [isOpen, setIsOpen] = useState(false);
@@ -33,7 +38,7 @@ function openModal() {
   setIsOpen(true);
 }
 
-const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
   const { name, value } = e.target;
   setFormData(prev => ({ ...prev, [name]: value }));
 };
@@ -44,44 +49,51 @@ const handleCreateMedicamento = async () => {
     horarios: formData.horarios.split(',').map(h => h.trim()),
     estoque: Number(formData.estoque),
     fim: formData.fim || null,
-    status: 'ativo'
+    status: formData.status || 'ativo'
   };
 
+  // 1) Persistência: é o que define sucesso/erro para o usuário.
   try {
-    await addDoc(collection(db, 'Medicamentos'), data);
-     // 2️⃣ Chama sua API Gateway para iniciar a Step Function
-     const response = await fetch("https://49n9vai118.execute-api.us-east-1.amazonaws.com/prd", {
+    const ref = await addDoc(collection(db, 'Medicamentos'), data);
+    registrar('criar', 'medicamento', ref.id, data.nome);
+  } catch (error) {
+    showFeedback(false, 'Erro ao cadastrar medicamento.');
+    console.error('Erro ao adicionar medicamento:', error);
+    return;
+  }
+
+  // Medicamento salvo: confirma para o usuário e limpa o formulário.
+  closeModal();
+  showFeedback(true, 'Medicamento cadastrado com sucesso!');
+  setFormData({
+    nome: '',
+    dosagem: '',
+    instrucoes: '',
+    frequencia: '',
+    horarios: '',
+    inicio: '',
+    fim: '',
+    estoque: 0,
+    medico: '',
+    status: 'ativo'
+  });
+  fetchMedicamentos(); // atualiza a tela
+
+  // 2) Lembrete (Step Function AWS) é best-effort: uma falha aqui NÃO significa
+  // que o medicamento deixou de ser cadastrado, então não reportamos como erro de cadastro.
+  try {
+    const response = await fetch("https://49n9vai118.execute-api.us-east-1.amazonaws.com/prd", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(data), // manda o mesmo objeto salvo no Firestore
+      body: JSON.stringify(data),
     });
-
     if (!response.ok) {
-      throw new Error("Erro ao chamar Step Function");
+      throw new Error(`Step Function retornou status ${response.status}`);
     }
-
-    const stepResult = await response.json();
-    console.log("Step Function disparada:", stepResult);
-    closeModal();
-    showFeedback(true, 'Medicamento cadastrado com sucesso!');
-    setFormData({
-      nome: '',
-      dosagem: '',
-      instrucoes: '',
-      frequencia: '',
-      horarios: '',
-      inicio: '',
-      fim: '',
-      estoque: 0,
-      medico: '',
-      status: 'ativo'
-    });
-    fetchMedicamentos(); // chama sua função de atualizar a tela
   } catch (error) {
-    showFeedback(false, 'Erro ao cadastrar medicamento.');
-    console.error('Erro ao adicionar medicamento:', error);
+    console.warn('Medicamento cadastrado, mas o agendamento do lembrete falhou:', error);
   }
 };
 
@@ -92,7 +104,6 @@ const fetchMedicamentos = async () => {
       id: doc.id,
       ...doc.data(),
     })) as Medicamento[];
-    console.log('Medicamentos:', dados, typeof dados);
     setMedicamentos(dados);
   } catch (error) {
     console.error('Erro ao buscar medicamentos:', error);
@@ -109,8 +120,6 @@ const carregarMedicamentos = async () => {
 
     // Ordena pelo último inserido primeiro
     dados = dados.reverse(); // inverte o array, assumindo que os últimos docs estão no final
-    console.log('Medicamentos:', dados, typeof dados);
-
     setMedicamentos(dados);
   } catch (error) {
     console.error('Erro ao buscar medicamentos:', error);
@@ -129,6 +138,7 @@ const handleUpdateMedicamento = async () => {
   try {
     const docRef = doc(db, 'Medicamentos', medicamentoEditandoId);
     await updateDoc(docRef, dataAtualizada);
+    registrar('editar', 'medicamento', medicamentoEditandoId, dataAtualizada.nome);
 
     showFeedback(true, 'Medicamento atualizado com sucesso!');
     closeModal();
@@ -177,11 +187,11 @@ function closeModal() {
       instrucoes: medicamento.instrucoes,
       frequencia: medicamento.frequencia,
       horarios: Array.isArray(medicamento.horarios) ? medicamento.horarios.join(', ') : '',
-      inicio: medicamento.inicio,
-      fim: medicamento.fim || '',
+      inicio: paraISO(medicamento.inicio),
+      fim: medicamento.fim ? paraISO(medicamento.fim) : '',
       estoque: medicamento.estoque,
       medico: medicamento.medico,
-      status: 'ativo'
+      status: medicamento.status || 'ativo'
     });
     setIsEditando(true);
     setMedicamentoEditandoId(medicamento.id);
@@ -201,13 +211,23 @@ function closeModal() {
   }, []);
 
   const deletarMedicamento = async (id: string) => {
+    const medicamento = medicamentos.find((m) => m.id === id);
+    const ok = await confirmar({
+      titulo: 'Excluir medicamento',
+      mensagem: `Excluir ${medicamento?.nome ?? 'este medicamento'} do prontuário? Esta ação não pode ser desfeita.`,
+      textoConfirmar: 'Excluir',
+      destrutivo: true,
+    });
+    if (!ok) return;
     await deleteDoc(doc(db, 'Medicamentos', id));
+    registrar('excluir', 'medicamento', id, medicamento?.nome);
     carregarMedicamentos();
   };
 
   const medicamentosFiltrados = medicamentos.filter(medicamento => {
     if (filtro === 'todos') return true;
-    return medicamento.status === filtro;
+    // Docs antigos podem não ter o campo status → tratados como 'ativo'.
+    return (medicamento.status ?? 'ativo') === filtro;
   });
 
   return (
@@ -273,7 +293,13 @@ function closeModal() {
                       <div key={field.name}>
                         <label className="block text-sm font-medium text-gray-700">{field.label}</label>
                         <input
-                          type={field.name === 'estoque' ? 'number' : 'text'}
+                          type={
+                            field.name === 'estoque'
+                              ? 'number'
+                              : field.name === 'inicio' || field.name === 'fim'
+                              ? 'date'
+                              : 'text'
+                          }
                           name={field.name}
                           value={(formData as any)[field.name]}
                           onChange={handleChange}
@@ -281,6 +307,20 @@ function closeModal() {
                         />
                       </div>
                     ))}
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Status</label>
+                      <select
+                        name="status"
+                        value={formData.status}
+                        onChange={handleChange}
+                        className="mt-1 w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      >
+                        <option value="ativo">Ativo</option>
+                        <option value="pausado">Pausado</option>
+                        <option value="finalizado">Finalizado</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div className="mt-6 flex justify-end gap-2">
@@ -429,8 +469,8 @@ function closeModal() {
                     <div>
                       <p className="text-xs text-gray-500">Período</p>
                       <p className="text-sm">
-                        Início: {medicamento.inicio}
-                        {medicamento.fim && ` | Fim: ${medicamento.fim}`}
+                        Início: {formatarDataBR(medicamento.inicio)}
+                        {medicamento.fim && ` | Fim: ${formatarDataBR(medicamento.fim)}`}
                       </p>
                     </div>
                   </div>

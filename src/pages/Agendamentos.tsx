@@ -3,8 +3,11 @@ import { Calendar, Clock, MapPin, User, PlusCircle, CheckCircle, XCircle } from 
 import { addDoc, collection, getDocs, updateDoc, doc  } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Agendamento } from '../interface/interface';
+import { useAuditoria } from '../config/auditoria';
+import { ordinalData, formatarDataBR } from '../utils/datas';
 
 const Agendamentos: React.FC = () => {
+  const { registrar } = useAuditoria();
   const [filtroStatus, setFiltroStatus] = useState<string>('todos');
   const [activeTab, setActiveTab] = useState<'lista' | 'calendario'>('lista');
   const [mostrarModal, setMostrarModal] = useState(false);
@@ -59,14 +62,16 @@ const salvarRealizado = async () => {
     // Atualiza status do agendamento
     const refAgendamento = doc(db, "agendamentos", agendamentoEditando.id);
     await updateDoc(refAgendamento, { status: "realizado" });
+    registrar('status', 'agendamento', agendamentoEditando.id, `${agendamentoEditando.titulo ?? ''} · atendimento concluído`.trim());
 
     // Salva no histórico médico
-    await addDoc(collection(db, "historicoMedico"), {
+    const histRef = await addDoc(collection(db, "historicoMedico"), {
       ...dadosHistorico,
       data: agendamentoEditando.data,
       tipo: agendamentoEditando.tipo,
       agendamentoId: agendamentoEditando.id,
     });
+    registrar('criar', 'historico', histRef.id, dadosHistorico.titulo);
 
     const medicamentosValidos = dadosMedicamentos.filter(
       (med) =>
@@ -84,16 +89,16 @@ const salvarRealizado = async () => {
     // Salva medicamentos individualmente
 
     for (const med of medicamentosValidos) {
-      await addDoc(collection(db, "Medicamentos"), {
+      const medRef = await addDoc(collection(db, "Medicamentos"), {
         ...med,
         status: "ativo",
-   
+
       });
-    
+      registrar('criar', 'medicamento', medRef.id, med.nome);
   }
 
   if(dadosRetorno.data?.trim() !== ''){
-    await addDoc(collection(db, "agendamentos"), {
+    const retRef = await addDoc(collection(db, "agendamentos"), {
       data: dadosRetorno.data,
       hora: dadosRetorno.hora,
       titulo: dadosHistorico.titulo,
@@ -102,6 +107,7 @@ const salvarRealizado = async () => {
       tipo: 'consulta',
       status: 'pendente'
     });
+    registrar('criar', 'agendamento', retRef.id, `Retorno · ${dadosHistorico.titulo}`);
   }
 
   const examesValidos = dadosExames.filter(
@@ -116,11 +122,12 @@ const salvarRealizado = async () => {
 
     // Salva exames com status "pendente"
     for (const ex of examesValidos) {
-      await addDoc(collection(db, "agendamentos"), {
+      const exRef = await addDoc(collection(db, "agendamentos"), {
         ...ex,
         tipo: "exame",
         status: "pendente",
       });
+      registrar('criar', 'agendamento', exRef.id, `Exame · ${ex.titulo}`);
     }
   
 
@@ -164,11 +171,11 @@ const salvarRealizado = async () => {
         id: doc.id,
         ...doc.data(),
       })) as unknown as Agendamento[];
-          // Ordenar do mais recente para o mais antigo
+          // Ordenar do mais recente para o mais antigo (data tolerante a formatos; hora como desempate)
       const dadosOrdenados = dados.sort((a, b) => {
-      const dataHoraA = new Date(`${a.data}T${a.hora}`).getTime();
-      const dataHoraB = new Date(`${b.data}T${b.hora}`).getTime();
-      return dataHoraB - dataHoraA; // mais recente primeiro
+      const diff = ordinalData(b.data) - ordinalData(a.data);
+      if (diff !== 0) return diff;
+      return (b.hora || '').localeCompare(a.hora || '');
     });
       setAgendamentos(dadosOrdenados);
     } catch (err) {
@@ -182,8 +189,9 @@ const salvarRealizado = async () => {
     try {
       const refAgendamento = doc(db, 'agendamentos', agendamento.id);
       await updateDoc(refAgendamento, { status: 'realizado' });
-  
-      await addDoc(collection(db, 'historicoMedico'), {
+      registrar('status', 'agendamento', agendamento.id, `${agendamento.titulo ?? ''} · realizado`.trim());
+
+      const histRef = await addDoc(collection(db, 'historicoMedico'), {
         tipo: agendamento.tipo === 'procedimento' ? 'cirurgia' : agendamento.tipo,
         data: agendamento.data,
         titulo: agendamento.titulo,
@@ -193,6 +201,7 @@ const salvarRealizado = async () => {
         instituicao: agendamento.local,
         documentos: [], // pode adaptar se houver arquivos associados
       });
+      registrar('criar', 'historico', histRef.id, agendamento.titulo);
   
       setModalMensagem('Agendamento marcado como realizado e salvo no histórico médico!');
       setMostrarModalMensagem(true);
@@ -215,7 +224,8 @@ const salvarRealizado = async () => {
     try {
       const ref = doc(db, 'agendamentos', id);
       await updateDoc(ref, { status: novoStatus });
-  
+      registrar('status', 'agendamento', id, `→ ${novoStatus}`);
+
       setModalMensagem(`Agendamento ${novoStatus === 'confirmado' ? 'confirmado' : 'cancelado'} com sucesso!`);
       setMostrarModalMensagem(true);
       setTimeout(() => {
@@ -293,11 +303,13 @@ const salvarRealizado = async () => {
         // Edição de agendamento existente
         const ref = doc(db, 'agendamentos', agendamentoEditando.id);
         await updateDoc(ref, dados);
+        registrar('editar', 'agendamento', agendamentoEditando.id, dados.titulo);
       } else {
         // Novo agendamento
-        await addDoc(collection(db, 'agendamentos'), dados);
+        const ref = await addDoc(collection(db, 'agendamentos'), dados);
+        registrar('criar', 'agendamento', ref.id, dados.titulo);
       }
-  
+
       setModalMensagem('Agendamento salvo com sucesso!');
       setMostrarModalMensagem(true);
       setMostrarModal(false);
@@ -516,7 +528,7 @@ const salvarRealizado = async () => {
       <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gray-50/50">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Concluir Atendimento</h2>
-          <p className="text-sm text-gray-500">{agendamentoEditando?.titulo} em {agendamentoEditando?.data}</p>
+          <p className="text-sm text-gray-500">{agendamentoEditando?.titulo} em {formatarDataBR(agendamentoEditando?.data)}</p>
         </div>
         <button
           onClick={() => setMostrarModalRealizado(false)}
@@ -896,7 +908,7 @@ const salvarRealizado = async () => {
                       <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <div className="flex items-center text-sm text-gray-600">
                           <Calendar size={16} className="mr-2 text-gray-400" />
-                          <span>{agendamento.data}</span>
+                          <span>{formatarDataBR(agendamento.data)}</span>
                         </div>
                         
                         <div className="flex items-center text-sm text-gray-600">

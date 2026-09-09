@@ -5,10 +5,14 @@ import { doc, getDoc, getFirestore, setDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { useUsuario } from '../config/bd/userContext';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
+import { useFeedback } from '../components/FeedbackProvider';
+import { useAuditoria } from '../config/auditoria';
 
 
 const Configuracoes: React.FC = () => {
   const usuario = useUsuario();
+  const { notificar } = useFeedback();
+  const { registrar } = useAuditoria();
   const [secaoAtiva, setSecaoAtiva] = useState<string>('conta');
   const [notificacoesEmail, setNotificacoesEmail] = useState<boolean>(true);
   const [notificacoesPush, setNotificacoesPush] = useState<boolean>(true);
@@ -63,11 +67,12 @@ const Configuracoes: React.FC = () => {
         email,
         telefone,
         fotoPerfil: imagemUrl,
-      }, { merge: true }); 
-      alert("Dados salvos com sucesso!");
+      }, { merge: true });
+      registrar('editar', 'paciente', userId, `${nome} ${sobrenome}`.trim());
+      notificar('sucesso', 'Dados salvos com sucesso!');
     } catch (error) {
       console.error("Erro ao salvar dados:", error);
-      alert("Erro ao salvar dados.");
+      notificar('erro', 'Erro ao salvar dados.');
     }
   };
   

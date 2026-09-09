@@ -31,6 +31,7 @@ export interface Metrica {
 }
 
 export interface MetricaData {
+  id?: string;
   data: string;
   valor: number;
 }
@@ -59,6 +60,15 @@ export interface Profissional {
   email?: string;
   pix?: string;
   foto?: string;
+}
+
+export interface Tecnico {
+  id: string;
+  nome: string;
+  telefone?: string;
+  registro?: string; // COREN
+  turnoPreferencial?: 'manha' | 'noite' | 'ambos';
+  ativo: boolean;
 }
 
 export interface RotinaItem {

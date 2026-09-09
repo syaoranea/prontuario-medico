@@ -5,6 +5,8 @@ import ProximosAgendamentosWidget from '../components/widgets/ProximosAgendament
 import MedicamentosWidget from '../components/widgets/MedicamentosWidget';
 import AlertasWidget from '../components/widgets/AlertasWidget';
 import { useUsuario } from '../config/bd/userContext';
+import { useFeedback } from '../components/FeedbackProvider';
+import { ordinalData, formatarDataExtenso, dataFimVigente, faltaMenosDeUmMes } from '../utils/datas';
 import { collection, query, where, orderBy, getDocs, Timestamp, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Agendamento, Medicamento, Metrica, MetricaData } from '../interface/interface';
@@ -14,11 +16,6 @@ export const reagendarAgendamento = async (
   novaData: string,
   novaHora: string
 ): Promise<void> => {
-    console.log('Reagendando com:', {
-    agendamentoId,
-    novaData,
-    novaHora
-  });
   if (!novaData || !novaHora) {
     throw new Error('Data e hora são obrigatórias para reagendar.');
   }
@@ -47,10 +44,11 @@ const Dashboard: React.FC = () => {
   const [novaHora, setNovaHora] = useState('');
   const [pendentes, setPendentes] = useState<Agendamento[]>([]);
   const [totalPendentes, setTotalPendentes] = useState(0);
+  const { notificar } = useFeedback();
 
   useEffect(() => {
     buscarAgendamentos();
-    buscarMetricas();
+    const unsubscribeMetricas = buscarMetricas();
     carregarMedicamentos();
     const carregar = async () => {
       const { total, pendentes } = await buscarPendentes();
@@ -59,14 +57,17 @@ const Dashboard: React.FC = () => {
     };
     const carregarConsulta = async () => {
       const resultado = await buscarProximaConsulta();
-      console.log('aqui'+ resultado)
-
       setProximaConsulta(resultado);
     };
 
     carregarConsulta();
-  
+
     carregar();
+
+    // Limpa o listener em tempo real ao desmontar para evitar acúmulo de listeners.
+    return () => {
+      unsubscribeMetricas?.();
+    };
   }, []);
   
   
@@ -93,7 +94,6 @@ const Dashboard: React.FC = () => {
           status: dataDoc.status || '',
         };
       });
-      console.log(dados)
       setAgendamentos(dados);
     } catch (error) {
       console.error('Erro ao buscar agendamentos:', error);
@@ -105,25 +105,17 @@ const Dashboard: React.FC = () => {
   const carregarMedicamentos = async () => {
     try {
       const querySnapshot = await getDocs(collection(db, 'Medicamentos'));
-      const hoje = new Date();
-  
+
       const dados: Medicamento[] = querySnapshot.docs
         .map(doc => ({
           id: doc.id,
           ...doc.data(),
         })) as Medicamento[];
-  
-      const filtrados = dados.filter(med => {
-        if (!med.fim) return true; // mantém se não tem data de fim
-  
-        // converte DD/MM/YYYY para Date
-        const [dia, mes, ano] = med.fim.split('/').map(Number);
-        const fim = new Date(ano, mes - 1, dia);
-        fim.setDate(fim.getDate() + 1); // adiciona 1 dia
-  
-        return fim >= hoje; // mantém apenas se fim+1 dia >= hoje
-      });
-  
+
+      // Mantém o medicamento se não tem fim ou se o fim (tolerando qualquer
+      // formato de data) ainda não passou.
+      const filtrados = dados.filter(med => !med.fim || dataFimVigente(med.fim));
+
       setMedicamentos(filtrados);
     } catch (error) {
       console.error('Erro ao buscar medicamentos:', error);
@@ -142,15 +134,22 @@ const Dashboard: React.FC = () => {
       );
   
       const snapshot = await getDocs(q);
-  
+
       const pendentes = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...(doc.data() as Omit<Agendamento, "id">),
       }));
-  
+
+      // Regra de lembrete de consulta: uma consulta pendente só vira lembrete
+      // quando faltar menos de um mês para a data (e ela ainda não tiver passado).
+      // Exames pendentes mantêm o comportamento atual (aparecem sempre).
+      const filtrados = pendentes.filter((p) =>
+        p.tipo === 'consulta' ? faltaMenosDeUmMes(p.data) : true
+      );
+
       return {
-        total: pendentes.filter((p) => p.tipo === 'exame').length,
-        pendentes,
+        total: filtrados.filter((p) => p.tipo === 'exame').length,
+        pendentes: filtrados,
       };
     } catch (error) {
       console.error("Erro ao buscar pendentes:", error);
@@ -178,70 +177,40 @@ const Dashboard: React.FC = () => {
         ...(doc.data() as Omit<Agendamento, "id">),
       }));
   
-      // ordenar pelas datas
-      const ordenados = pendentes.sort((a, b) => {
-        const dataA = parseDataString(a.data);
-        const dataB = parseDataString(b.data);
-  
-        if (!dataA || !dataB) return 0;
-  
-        return dataA.getTime() - dataB.getTime();
-      });
-  
+      // Ordena pela data (tolerando qualquer formato) — a mais próxima primeiro.
+      const ordenados = pendentes.sort((a, b) => ordinalData(a.data) - ordinalData(b.data));
+
       const proxima = ordenados[0];
-  
-      const dataFormatada = formatarData(proxima.data);
-  
+
       return {
         titulo: proxima.titulo,
-        data: dataFormatada,
+        data: formatarDataExtenso(proxima.data),
       };
     } catch (error) {
       console.error("Erro ao buscar próxima consulta:", error);
       return null;
     }
   };
-  
-  function parseDataString(dataStr: string): Date | null {
-    const partes = dataStr.split("/"); // espera dd/MM/yyyy
-    if (partes.length !== 3) return null;
-  
-    const [dia, mes, ano] = partes.map(Number);
-    const data = new Date(ano, mes - 1, dia);
-  
-    return isNaN(data.getTime()) ? null : data;
-  }
-  
-  function formatarData(dataStr: string): string {
-    const data = new Date(dataStr); // funciona com '2025-09-30'
-    if (isNaN(data.getTime())) return dataStr;
-  
-    const nomesMeses = [
-      "janeiro", "fevereiro", "março", "abril", "maio", "junho",
-      "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
-    ];
-  
-    return `${data.getDate()} de ${nomesMeses[data.getMonth()]}`;
-  }
-  
+
 
  // Função para confirmar agendamento (atualiza status para 'confirmado')
  const handleConfirmar = async (id: string) => {
   try {
     const refAgendamento = doc(db, 'agendamentos', id);
-    await updateDoc(refAgendamento, { status: 'realizado' }); // <- Aqui está a mudança
-    alert('Status atual com sucesso!');
+    await updateDoc(refAgendamento, { status: 'confirmado' });
+    notificar('sucesso', 'Agendamento confirmado com sucesso!');
     buscarAgendamentos();
   } catch (error) {
     console.error('Erro ao atualizar status do agendamento:', error);
-    alert('Erro ao atualizar agendamento. Tente novamente.');
+    notificar('erro', 'Erro ao atualizar agendamento. Tente novamente.');
   }
 };
 
 // Função para abrir modal de reagendamento
 const handleReagendar = (agendamento: Agendamento) => {
-  console.log("Abrindo modal para reagendar:", agendamento);
-  setAgendamentoReagendar(agendamento);
+  // Guarda apenas o ID do documento — reagendarAgendamento espera uma string,
+  // e doc(db, 'agendamentos', id) quebra se receber o objeto inteiro.
+  setAgendamentoReagendar(agendamento.id);
 
 
   // Corrige caso 'data' venha em formato ISO ou com mais de 10 caracteres
@@ -265,26 +234,22 @@ const handleReagendar = (agendamento: Agendamento) => {
 const salvarReagendamento = async () => {
   if (!agendamentoReagendar) return;
 
-  try {  
-    console.log('Reagendando com:', {
-    novaData,
-    novaHora
-  });
+  try {
     await reagendarAgendamento(
       agendamentoReagendar,
       novaData,
       novaHora
     );
-    alert('Agendamento reagendado com sucesso!');
+    notificar('sucesso', 'Agendamento reagendado com sucesso!');
     setMostrarModalReagendar(false);
     buscarAgendamentos();
   } catch (error) {
     console.error('Erro ao reagendar:', error);
-    alert('Erro ao reagendar. Verifique os dados e tente novamente.');
+    notificar('erro', 'Erro ao reagendar. Verifique os dados e tente novamente.');
   }
 };
 
-  const buscarMetricas = async () => {
+  const buscarMetricas = () => {
       const unsubscribe = onSnapshot(collection(db, 'metricas'), async (snapshot) => {
         const metricasFirebase: Metrica[] = await Promise.all(
           snapshot.docs.map(async (doc) => {
@@ -466,7 +431,7 @@ const salvarReagendamento = async () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <MetricasWidget />
+        <MetricasWidget metricas={metricas} />
         <ProximosAgendamentosWidget
            agendamentos={agendamentos}
            onConfirmar={handleConfirmar}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, LineChart as LineChartIcon, PlusCircle } from 'lucide-react';
+import { Calendar, LineChart as LineChartIcon, PlusCircle, Pencil, Trash2 } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -13,8 +13,12 @@ import {
 } from 'chart.js';
 
 import { db } from '../config/firebase';
-  import { onSnapshot, query, collection, orderBy, addDoc , Timestamp, getDocs} from 'firebase/firestore';
+  import { onSnapshot, query, collection, orderBy, addDoc , Timestamp, getDocs, updateDoc, deleteDoc, doc} from 'firebase/firestore';
 import { Metrica, MetricaData } from '../interface/interface';
+import { useFeedback } from '../components/FeedbackProvider';
+import { useConfirm } from '../components/ConfirmProvider';
+import { useAuditoria } from '../config/auditoria';
+import { formatarDataBR, paraISO } from '../utils/datas';
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -126,6 +130,10 @@ const Metricas: React.FC = () => {
   const [metricas, setMetricas] = useState<Metrica[]>([]);
   const [dadosGrafico, setDadosGrafico] = useState<any[]>([]);
 const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
+const [registroEditandoId, setRegistroEditandoId] = useState<string | null>(null);
+const { notificar } = useFeedback();
+const { confirmar } = useConfirm();
+const { registrar } = useAuditoria();
   
 
   
@@ -155,6 +163,7 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
             }
           
             return {
+              id: reg.id,
               data: dataObj.toISOString(),  // retorna string ISO padrão
               valor: regData.valor,
             };
@@ -191,7 +200,7 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
       setDadosTabela(metrica.registros);
       setDadosGrafico(
         metrica.registros.map((r) => ({
-          name: r.data,
+          name: formatarDataBR(r.data),
           valor: r.valor
         }))
       );
@@ -206,7 +215,6 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
         ...novoRegistro,
         data: Timestamp.fromDate(novoRegistro.data), // importante converter
       });
-      console.log('Registro salvo com sucesso!');
     } catch (error) {
       console.error('Erro ao salvar registro:', error);
     }
@@ -214,16 +222,14 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
   
   const registrarMedicao = async () => {
     if (!novaData || !novoValor || !metricaSelecionada) {
-      alert("Preencha todos os campos corretamente.");
+      notificar('erro', 'Preencha todos os campos corretamente.');
       return;
     }
   
     setCarregando(true);
   
     try {
-      console.log('novaData:', novaData); // deve ser algo como "2025-06-07"
     const data = new Date(`${novaData}T00:00:00`);
-    console.log('Objeto Date gerado:', data);
 
     const registro: Registro = {
       data,
@@ -231,16 +237,82 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
     };
   
       await salvarRegistro(metricaSelecionada.id, registro);
-  
+      registrar('criar', 'metrica', metricaSelecionada.id, `${metricaSelecionada.nome}: ${registro.valor} ${metricaSelecionada.unidade ?? ''}`.trim());
+
       // Resetar os campos do modal
       setNovaData('');
       setNovoValor('');
       setShowModal(false);
+      notificar('sucesso', 'Medição registrada com sucesso!');
     } catch (error) {
       console.error("Erro ao registrar medição:", error);
-      alert("Erro ao salvar medição.");
+      notificar('erro', 'Erro ao salvar medição.');
     } finally {
       setCarregando(false);
+    }
+  };
+
+  const abrirNovaMedicao = () => {
+    setRegistroEditandoId(null);
+    setNovaData('');
+    setNovoValor('');
+    setShowModal(true);
+  };
+
+  const fecharModalMedicao = () => {
+    setShowModal(false);
+    setRegistroEditandoId(null);
+    setNovaData('');
+    setNovoValor('');
+  };
+
+  const abrirEdicaoRegistro = (registro: MetricaData) => {
+    if (!registro.id) return;
+    setRegistroEditandoId(registro.id);
+    setNovaData(paraISO(registro.data));
+    setNovoValor(String(registro.valor));
+    setShowModal(true);
+  };
+
+  const atualizarRegistro = async () => {
+    if (!novaData || !novoValor || !metricaSelecionada || !registroEditandoId) {
+      notificar('erro', 'Preencha todos os campos corretamente.');
+      return;
+    }
+    setCarregando(true);
+    try {
+      const data = new Date(`${novaData}T00:00:00`);
+      await updateDoc(doc(db, 'metricas', metricaSelecionada.id, 'registros', registroEditandoId), {
+        data: Timestamp.fromDate(data),
+        valor: parseFloat(novoValor),
+      });
+      registrar('editar', 'metrica', metricaSelecionada.id, `${metricaSelecionada.nome}: ${novoValor} ${metricaSelecionada.unidade ?? ''}`.trim());
+      fecharModalMedicao();
+      notificar('sucesso', 'Medição atualizada!');
+    } catch (error) {
+      console.error('Erro ao atualizar medição:', error);
+      notificar('erro', 'Erro ao atualizar medição.');
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  const excluirRegistro = async (registro: MetricaData) => {
+    if (!registro.id || !metricaSelecionada) return;
+    const ok = await confirmar({
+      titulo: 'Excluir medição',
+      mensagem: `Excluir a medição de ${formatarDataBR(registro.data)} (${registro.valor} ${metricaSelecionada.unidade ?? ''})? Esta ação não pode ser desfeita.`,
+      textoConfirmar: 'Excluir',
+      destrutivo: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'metricas', metricaSelecionada.id, 'registros', registro.id));
+      registrar('excluir', 'metrica', metricaSelecionada.id, `${metricaSelecionada.nome}: ${registro.valor}`);
+      notificar('sucesso', 'Medição excluída.');
+    } catch (error) {
+      console.error('Erro ao excluir medição:', error);
+      notificar('erro', 'Erro ao excluir medição.');
     }
   };
   
@@ -342,7 +414,7 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
 
         <button
           className="mt-4 md:mt-0 inline-flex items-center justify-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
-          onClick={() => setShowModal(true)}
+          onClick={abrirNovaMedicao}
         >
           <PlusCircle size={16} className="mr-2" />
           Registrar Nova Medição
@@ -386,7 +458,7 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
         {showModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
             <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-              <h2 className="text-lg font-semibold mb-4">Nova Medição - {metricaSelecionada?.nome}</h2>
+              <h2 className="text-lg font-semibold mb-4">{registroEditandoId ? 'Editar' : 'Nova'} Medição - {metricaSelecionada?.nome}</h2>
               
               <div className="space-y-4">
                 <input
@@ -407,17 +479,17 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
               <div className="mt-6 flex justify-end gap-3">
                 <button
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded"
-                  onClick={() => setShowModal(false)}
+                  onClick={fecharModalMedicao}
                   disabled={carregando}
                 >
                   Cancelar
                 </button>
                 <button
                   className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700"
-                  onClick={registrarMedicao}
+                  onClick={registroEditandoId ? atualizarRegistro : registrarMedicao}
                   disabled={carregando}
                 >
-                  {carregando ? 'Salvando...' : 'Salvar'}
+                  {carregando ? 'Salvando...' : (registroEditandoId ? 'Salvar alterações' : 'Salvar')}
                 </button>
               </div>
             </div>
@@ -492,13 +564,16 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
+                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Ações
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                 {dadosTabela.map((registro, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
+                  <tr key={registro.id ?? idx} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                    {new Date(registro.data).toLocaleDateString('pt-BR')}
+                    {formatarDataBR(registro.data)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {registro.valor} {metricaSelecionada?.unidade}
@@ -519,6 +594,24 @@ const [dadosTabela, setDadosTabela] = useState<MetricaData[]>([]);
                             : 'Dentro da meta'}
                         </span>
                       ) : null}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => abrirEdicaoRegistro(registro)}
+                          className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+                          title="Editar medição"
+                        >
+                          <Pencil size={16} />
+                        </button>
+                        <button
+                          onClick={() => excluirRegistro(registro)}
+                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Excluir medição"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

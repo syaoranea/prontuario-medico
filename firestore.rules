@@ -1,0 +1,130 @@
+rules_version = '2';
+
+// Regras de segurança do Firestore — prontuário de home care.
+// Princípio: NEGAR por padrão. Só membros da equipe autenticados e ativos
+// leem dados clínicos; apenas a equipe clínica escreve. Família = somente leitura.
+//
+// O papel de cada usuário vive em /membrosEquipe/{uid}: { nome, papel, ativo }.
+// papel ∈ ['tecnico','enfermeiro','medico','familia','admin'].
+//
+// Deploy: firebase deploy --only firestore:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function membroDoc() {
+      return get(/databases/$(database)/documents/membrosEquipe/$(request.auth.uid)).data;
+    }
+
+    function membroAtivo() {
+      return autenticado()
+        && exists(/databases/$(database)/documents/membrosEquipe/$(request.auth.uid))
+        && membroDoc().ativo == true;
+    }
+
+    function papel() {
+      return membroDoc().papel;
+    }
+
+    function ehAdmin() {
+      return membroAtivo() && papel() == 'admin';
+    }
+
+    // Equipe que pode ESCREVER dados clínicos (família fica de fora).
+    function equipeClinica() {
+      return membroAtivo() && papel() in ['tecnico', 'enfermeiro', 'medico', 'admin'];
+    }
+
+    // ── Perfis de acesso da equipe ──────────────────────────────────────────
+    // Cada um lê o próprio perfil; só admin cria/edita perfis e papéis.
+    match /membrosEquipe/{uid} {
+      allow read: if autenticado() && (request.auth.uid == uid || ehAdmin());
+      allow create, update, delete: if ehAdmin();
+    }
+
+    // ── Dados clínicos ──────────────────────────────────────────────────────
+    // Leitura: qualquer membro ativo (inclui família). Escrita: equipe clínica.
+    match /usuario/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /Informacoes-medicas/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /Medicamentos/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /agendamentos/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /historicoMedico/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /documentos/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /profissionais/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /metricas/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+      match /registros/{reg} {
+        allow read: if membroAtivo();
+        allow write: if equipeClinica();
+      }
+    }
+    match /rotina-items/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /rotina-execucoes/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    match /tecnicos/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+    // Pontos extras da gamificação: qualquer membro lê; só admin concede; imutável.
+    match /pontos-extras/{doc} {
+      allow read: if membroAtivo();
+      allow create: if ehAdmin();
+      allow update, delete: if false;
+    }
+    // Avaliação por tarefa (1º/2º/3º): qualquer membro lê; só admin edita.
+    match /avaliacoes-tarefa/{doc} {
+      allow read: if membroAtivo();
+      allow write: if ehAdmin();
+    }
+    // Competições da gamificação (temporadas): qualquer membro lê; só admin gerencia.
+    match /competicoes/{doc} {
+      allow read: if membroAtivo();
+      allow write: if ehAdmin();
+    }
+
+    // ── Trilha de auditoria ─────────────────────────────────────────────────
+    // Append-only e imutável: qualquer membro da equipe clínica REGISTRA ações
+    // (sempre em nome do próprio uid), gestão LÊ, e ninguém edita/apaga.
+    match /auditoria/{doc} {
+      allow read: if membroAtivo() && papel() in ['enfermeiro', 'medico', 'admin'];
+      allow create: if equipeClinica() && request.resource.data.quem == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── Bloqueio padrão para qualquer caminho não previsto acima ─────────────
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

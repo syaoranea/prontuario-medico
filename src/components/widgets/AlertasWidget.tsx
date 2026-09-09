@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, FileText, Pill, Calendar, ArrowRight } from 'lucide-react';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '../../config/firebase';
 import { Agendamento } from '../../interface/interface';
+import { formatarDataBR } from '../../utils/datas';
 
 interface AlertaWidgetProps {
   alertas: Agendamento[];
@@ -103,9 +102,9 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
             <div 
               key={alerta.id} 
               className={`p-4 border rounded-lg flex items-start space-x-3 ${
-                alerta.tipo === 'exame' 
-                ? 'bg-red-50 border-red-100' 
-                : alerta.prioridade === 'consulta'
+                alerta.tipo === 'exame'
+                ? 'bg-red-50 border-red-100'
+                : alerta.tipo === 'consulta'
                 ? 'bg-amber-50 border-amber-100'
                 : 'bg-blue-50 border-blue-100'
             }`}
@@ -124,7 +123,7 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
               
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-800">{alerta.tipo === 'exame' ? 'Marque seu exame de ' + alerta.titulo : 'Marque sua Consulta '+ alerta.titulo }</p>
-                <p className="text-xs text-gray-500 mt-1">{alerta.data}</p>
+                <p className="text-xs text-gray-500 mt-1">{formatarDataBR(alerta.data)}</p>
               </div>
               
               <button className="text-gray-400 hover:text-primary-600">

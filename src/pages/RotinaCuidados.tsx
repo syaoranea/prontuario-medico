@@ -1,19 +1,24 @@
-import React, { useState, useEffect, Fragment } from 'react';
+import React, { useState, useEffect, useMemo, Fragment } from 'react';
 import {
   ClipboardList, CheckSquare, History, Plus, Edit2, Trash2, Save,
   Sun, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
-  ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText
+  ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText,
+  Phone, UserPlus, BadgeCheck, Trophy, Crown, Star, Zap, Gift, Sparkles, Flame, Flag
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, query, where, orderBy, writeBatch
+  doc, setDoc, query, where, orderBy, writeBatch
 } from 'firebase/firestore';
 
 const sortItens = (arr: RotinaItem[]) =>
   [...arr].sort((a, b) => a.turno.localeCompare(b.turno) || a.ordem - b.ordem);
 import { db } from '../config/firebase';
 import { Dialog, Transition } from '@headlessui/react';
-import { RotinaItem, RotinaExecucao, ItemExecucao } from '../interface/interface';
+import { RotinaItem, RotinaExecucao, ItemExecucao, Tecnico } from '../interface/interface';
+import { useConfirm } from '../components/ConfirmProvider';
+import { useAuditoria } from '../config/auditoria';
+import { useAuth } from '../config/auth/authContext';
+import { formatarDataHoraBR, formatarDataBR, paraISO } from '../utils/datas';
 
 // ── Seed data (routine from the patient's home care plan) ──────────────────────
 
@@ -91,7 +96,14 @@ const RESPONSAVEL_CONFIG = {
   urgencia: { label: 'Urgência', color: 'bg-red-100 text-red-700' },
 };
 
-const hoje = () => new Date().toISOString().split('T')[0];
+// Data local no formato YYYY-MM-DD. NÃO usar toISOString() aqui: ela converte
+// para UTC e, no fuso do Brasil (UTC-3), a partir das 21h a data "pula" para o
+// dia seguinte — o que faria o plantão da noite registrar o checklist no dia errado.
+const hoje = () => {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().split('T')[0];
+};
 
 const formatarData = (data: string) => {
   const [y, m, d] = data.split('-');
@@ -102,10 +114,113 @@ const formatarTurnoLabel = (turno: string) => {
   return TURNO_CONFIG[turno as keyof typeof TURNO_CONFIG]?.label ?? turno;
 };
 
+// ── Gamificação ─────────────────────────────────────────────────────────────
+
+interface PontoExtra {
+  id: string;
+  tecnico: string;
+  pontos: number;
+  motivo: string;
+  dadoPor: string;
+  criadoEm: string;
+}
+
+// Avaliação de "quem executou melhor" cada tarefa da rotina (1º/2º/3º).
+interface AvaliacaoTarefa {
+  primeiro?: string;
+  segundo?: string;
+  terceiro?: string;
+  atualizadoEm?: string;
+}
+
+interface RankingSnapshot {
+  nome: string;
+  total: number;
+  pontosRotina: number;
+  pontosExtras: number;
+  pontosTarefa: number;
+  plantoes: number;
+}
+
+interface Competicao {
+  id: string;
+  inicio: string | null;     // ISO (null = placar acumulado, sem início formal)
+  fim?: string | null;       // ISO quando encerrada
+  status: 'ativa' | 'encerrada';
+  vencedor?: string | null;
+  ranking?: RankingSnapshot[];
+}
+
+// Pontos por % de itens concluídos no plantão.
+const pontosPorPercentual = (pct: number): number => {
+  if (pct >= 100) return 6;
+  if (pct >= 90) return 5;
+  if (pct >= 80) return 4;
+  if (pct >= 70) return 3;
+  if (pct >= 60) return 2;
+  if (pct >= 50) return 1;
+  return 0;
+};
+
+const NIVEIS = [
+  { min: 0, titulo: 'Novato', icon: Star, cor: 'from-slate-500 to-slate-600' },
+  { min: 10, titulo: 'Bronze', icon: Flame, cor: 'from-amber-600 to-orange-700' },
+  { min: 30, titulo: 'Prata', icon: Zap, cor: 'from-slate-300 to-slate-400' },
+  { min: 60, titulo: 'Ouro', icon: Crown, cor: 'from-yellow-400 to-amber-500' },
+  { min: 100, titulo: 'Lendário', icon: Trophy, cor: 'from-fuchsia-500 to-purple-600' },
+];
+
+const nivelDe = (total: number) => {
+  let i = 0;
+  for (let k = 0; k < NIVEIS.length; k++) if (total >= NIVEIS[k].min) i = k;
+  const atual = NIVEIS[i];
+  const prox = NIVEIS[i + 1];
+  const pct = prox ? Math.round(((total - atual.min) / (prox.min - atual.min)) * 100) : 100;
+  return { ...atual, prox, pct, restante: prox ? prox.min - total : 0 };
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 const RotinaCuidados: React.FC = () => {
-  const [abaAtiva, setAbaAtiva] = useState<'rotina' | 'checklist' | 'historico'>('rotina');
+  const { confirmar } = useConfirm();
+  const { registrar } = useAuditoria();
+  const { temPapel, perfil } = useAuth();
+  const [abaAtiva, setAbaAtiva] = useState<'rotina' | 'checklist' | 'historico' | 'tecnicos' | 'gamificacao'>('rotina');
+
+  // Gamificação
+  const [pontosExtras, setPontosExtras] = useState<PontoExtra[]>([]);
+  const [carregandoPontos, setCarregandoPontos] = useState(false);
+  const [modalPontosAberto, setModalPontosAberto] = useState(false);
+  const [salvandoPontos, setSalvandoPontos] = useState(false);
+  const [formPontos, setFormPontos] = useState({ tecnico: '', pontos: 3, motivo: '' });
+
+  // Filtro do histórico por técnico
+  const [filtroTecnicoHist, setFiltroTecnicoHist] = useState<string>('todos');
+
+  // Placar: sub-abas e avaliação por tarefa
+  const [abaPlacar, setAbaPlacar] = useState<'ranking' | 'avaliacao'>('ranking');
+  const [avaliacoes, setAvaliacoes] = useState<Record<string, AvaliacaoTarefa>>({});
+
+  // Competições (temporadas)
+  const [competicaoAtiva, setCompeticaoAtiva] = useState<Competicao | null>(null);
+  const [ultimaCompeticao, setUltimaCompeticao] = useState<Competicao | null>(null);
+  const [competicoesEncerradas, setCompeticoesEncerradas] = useState<Competicao[]>([]);
+  const [competicaoExpandida, setCompeticaoExpandida] = useState<string | null>(null);
+  const [processandoComp, setProcessandoComp] = useState(false);
+
+  // Técnicos de plantão
+  const [tecnicos, setTecnicos] = useState<Tecnico[]>([]);
+  const [carregandoTecnicos, setCarregandoTecnicos] = useState(true);
+  const [modalTecnicoAberto, setModalTecnicoAberto] = useState(false);
+  const [salvandoTecnico, setSalvandoTecnico] = useState(false);
+  const [tecnicoEditandoId, setTecnicoEditandoId] = useState<string | null>(null);
+  const [formTecnico, setFormTecnico] = useState<Omit<Tecnico, 'id'>>({
+    nome: '',
+    telefone: '',
+    registro: '',
+    turnoPreferencial: 'ambos',
+    ativo: true,
+  });
   const [modo, setModo] = useState<'paciente' | 'auxiliar'>('paciente');
   const [turnoAtivo, setTurnoAtivo] = useState<'manha' | 'noite'>('manha');
 
@@ -218,17 +333,326 @@ const RotinaCuidados: React.FC = () => {
         setObsGeral('');
         setCheckMap({});
         setChecklistSalvo(false);
+        // Pré-seleciona o técnico quando há exatamente um dedicado a este turno
+        // (preferência estrita, não "ambos"), agilizando o registro no plantão.
+        const dedicados = tecnicos.filter(t => t.ativo && t.turnoPreferencial === turno);
+        if (dedicados.length === 1) setAuxiliarNome(dedicados[0].nome);
       }
     } catch (err) {
       console.error(err);
     }
   };
 
-  useEffect(() => { carregarItens(); }, []);
+  // ── CRUD de técnicos de plantão ───────────────────────────────────────────
+  const carregarTecnicos = async () => {
+    setCarregandoTecnicos(true);
+    try {
+      const snap = await getDocs(collection(db, 'tecnicos'));
+      const dados = snap.docs
+        .map(d => ({ id: d.id, ...(d.data() as Omit<Tecnico, 'id'>) }))
+        .sort((a, b) => a.nome.localeCompare(b.nome));
+      setTecnicos(dados);
+    } catch (err) {
+      console.error('Erro ao carregar técnicos:', err);
+    } finally {
+      setCarregandoTecnicos(false);
+    }
+  };
+
+  const abrirNovoTecnico = () => {
+    setTecnicoEditandoId(null);
+    setFormTecnico({ nome: '', telefone: '', registro: '', turnoPreferencial: 'ambos', ativo: true });
+    setModalTecnicoAberto(true);
+  };
+
+  const abrirEdicaoTecnico = (t: Tecnico) => {
+    setTecnicoEditandoId(t.id);
+    setFormTecnico({
+      nome: t.nome,
+      telefone: t.telefone ?? '',
+      registro: t.registro ?? '',
+      turnoPreferencial: t.turnoPreferencial ?? 'ambos',
+      ativo: t.ativo,
+    });
+    setModalTecnicoAberto(true);
+  };
+
+  const salvarTecnico = async () => {
+    if (!formTecnico.nome.trim()) { mostrarFeedback('erro', 'Informe o nome do técnico.'); return; }
+    setSalvandoTecnico(true);
+    try {
+      if (tecnicoEditandoId) {
+        await updateDoc(doc(db, 'tecnicos', tecnicoEditandoId), { ...formTecnico, nome: formTecnico.nome.trim() });
+        registrar('editar', 'tecnico', tecnicoEditandoId, formTecnico.nome.trim());
+      } else {
+        const ref = await addDoc(collection(db, 'tecnicos'), { ...formTecnico, nome: formTecnico.nome.trim() });
+        registrar('criar', 'tecnico', ref.id, formTecnico.nome.trim());
+      }
+      setModalTecnicoAberto(false);
+      await carregarTecnicos();
+      mostrarFeedback('ok', tecnicoEditandoId ? 'Técnico atualizado.' : 'Técnico cadastrado.');
+    } catch (err) {
+      console.error('Erro ao salvar técnico:', err);
+      mostrarFeedback('erro', 'Erro ao salvar técnico.');
+    } finally {
+      setSalvandoTecnico(false);
+    }
+  };
+
+  const excluirTecnico = async (t: Tecnico) => {
+    const ok = await confirmar({
+      titulo: 'Excluir técnico',
+      mensagem: `Excluir ${t.nome} da lista de técnicos? Os plantões já registrados com esse nome não são afetados.`,
+      textoConfirmar: 'Excluir',
+      destrutivo: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'tecnicos', t.id));
+      registrar('excluir', 'tecnico', t.id, t.nome);
+      await carregarTecnicos();
+      mostrarFeedback('ok', 'Técnico removido.');
+    } catch (err) {
+      console.error('Erro ao excluir técnico:', err);
+      mostrarFeedback('erro', 'Erro ao excluir técnico.');
+    }
+  };
+
+  const tecnicosAtivos = tecnicos.filter(t => t.ativo);
+
+  useEffect(() => { carregarItens(); carregarTecnicos(); }, []);
+
+  const carregarPontosExtras = async () => {
+    setCarregandoPontos(true);
+    try {
+      const snap = await getDocs(collection(db, 'pontos-extras'));
+      setPontosExtras(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<PontoExtra, 'id'>) })));
+    } catch (err) {
+      console.error('Erro ao carregar pontos extras:', err);
+    } finally {
+      setCarregandoPontos(false);
+    }
+  };
+
+  const carregarAvaliacoes = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'avaliacoes-tarefa'));
+      const map: Record<string, AvaliacaoTarefa> = {};
+      snap.docs.forEach(d => { map[d.id] = d.data() as AvaliacaoTarefa; });
+      setAvaliacoes(map);
+    } catch (err) {
+      console.error('Erro ao carregar avaliações por tarefa:', err);
+    }
+  };
+
+  const carregarCompeticao = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'competicoes'));
+      const docs = snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Competicao, 'id'>) }));
+      setCompeticaoAtiva(docs.find(c => c.status === 'ativa') ?? null);
+      const encerradas = docs.filter(c => c.status === 'encerrada').sort((a, b) => (b.fim ?? '').localeCompare(a.fim ?? ''));
+      setUltimaCompeticao(encerradas[0] ?? null);
+      setCompeticoesEncerradas(encerradas);
+    } catch (err) {
+      console.error('Erro ao carregar competição:', err);
+    }
+  };
 
   useEffect(() => {
     if (abaAtiva === 'historico') carregarHistorico();
+    if (abaAtiva === 'gamificacao') { carregarHistorico(); carregarPontosExtras(); carregarAvaliacoes(); carregarCompeticao(); }
   }, [abaAtiva]);
+
+  // Início da competição ativa (null = conta tudo / sem competição em andamento).
+  const inicioComp = competicaoAtiva?.inicio ?? null;
+  const noPeriodoComp = (iso?: string) => !inicioComp || (!!iso && iso >= inicioComp);
+
+  // Ranking dos técnicos: pontos de rotina (por % do plantão) + pontos extras.
+  const ranking = useMemo(() => {
+    // Só conta eventos ocorridos dentro da competição ativa (ou tudo se não houver).
+    const inicio = competicaoAtiva?.inicio ?? null;
+    const noPeriodo = (iso?: string) => !inicio || (!!iso && iso >= inicio);
+
+    const mapa: Record<string, { nome: string; pontosRotina: number; pontosExtras: number; pontosTarefa: number; plantoes: number }> = {};
+    const garantir = (nome?: string) => {
+      if (!nome) return null;
+      if (!mapa[nome]) mapa[nome] = { nome, pontosRotina: 0, pontosExtras: 0, pontosTarefa: 0, plantoes: 0 };
+      return mapa[nome];
+    };
+    tecnicos.forEach(t => { if (t.ativo) garantir(t.nome); });
+    execucoes.forEach(ex => {
+      if (!noPeriodo(ex.criadoEm)) return;
+      const total = ex.itens.length;
+      const concl = ex.itens.filter(i => i.concluido).length;
+      const pct = total > 0 ? Math.round((concl / total) * 100) : 0;
+      const r = garantir(ex.auxiliar);
+      if (r) { r.pontosRotina += pontosPorPercentual(pct); r.plantoes += 1; }
+    });
+    pontosExtras.forEach(p => {
+      if (!noPeriodo(p.criadoEm)) return;
+      const r = garantir(p.tecnico);
+      if (r) r.pontosExtras += Number(p.pontos) || 0;
+    });
+    // Cada tarefa avaliada (na competição atual) dá 1 ponto a quem ficou em 1º lugar.
+    Object.values(avaliacoes).forEach(av => {
+      if (!noPeriodo(av.atualizadoEm)) return;
+      const r = garantir(av.primeiro);
+      if (r) r.pontosTarefa += 1;
+    });
+    return Object.values(mapa)
+      .map(r => ({ ...r, total: r.pontosRotina + r.pontosExtras + r.pontosTarefa }))
+      .sort((a, b) => b.total - a.total || b.plantoes - a.plantoes || a.nome.localeCompare(b.nome));
+  }, [execucoes, pontosExtras, tecnicos, avaliacoes, competicaoAtiva]);
+
+  // Disponibilidade do serviço: % de turnos (2/dia) com técnica presente.
+  // "Presente" = existe registro de checklist para aquela data+turno. Sem registro = falta.
+  // Só contamos turnos JÁ ENCERRADOS (manhã termina 19h; noite termina 7h do dia seguinte),
+  // para nunca penalizar um turno em andamento ou futuro.
+  const disponibilidade = useMemo(() => {
+    const cobertosSet = new Set(execucoes.map(e => `${paraISO(e.data)}|${e.turno}`));
+    const agora = new Date();
+    const calc = (dias: number) => {
+      const inicio = new Date();
+      inicio.setHours(0, 0, 0, 0);
+      inicio.setDate(inicio.getDate() - (dias - 1));
+      let esperados = 0;
+      let cobertos = 0;
+      const d = new Date(inicio);
+      while (d <= agora) {
+        const dataStr = paraISO(d);
+        const fimManha = new Date(d); fimManha.setHours(19, 0, 0, 0);
+        const fimNoite = new Date(d); fimNoite.setDate(fimNoite.getDate() + 1); fimNoite.setHours(7, 0, 0, 0);
+        if (fimManha <= agora) { esperados++; if (cobertosSet.has(`${dataStr}|manha`)) cobertos++; }
+        if (fimNoite <= agora) { esperados++; if (cobertosSet.has(`${dataStr}|noite`)) cobertos++; }
+        d.setDate(d.getDate() + 1);
+      }
+      return { cobertos, esperados, pct: esperados > 0 ? Math.round((cobertos / esperados) * 100) : null };
+    };
+    return { semanal: calc(7), mensal: calc(30), anual: calc(365) };
+  }, [execucoes]);
+
+  const abrirModalPontos = () => {
+    setFormPontos({ tecnico: '', pontos: 3, motivo: '' });
+    setModalPontosAberto(true);
+  };
+
+  // Define/atualiza a colocação (1º/2º/3º) de uma tarefa e persiste.
+  const definirAvaliacao = async (item: RotinaItem, posicao: 'primeiro' | 'segundo' | 'terceiro', nome: string) => {
+    const agoraIso = new Date().toISOString();
+    const atual = avaliacoes[item.id] ?? {};
+    const nova: AvaliacaoTarefa = { ...atual, [posicao]: nome || undefined, atualizadoEm: agoraIso };
+    setAvaliacoes(prev => ({ ...prev, [item.id]: nova })); // otimista
+    try {
+      await setDoc(doc(db, 'avaliacoes-tarefa', item.id), {
+        ...nova,
+        rotinaItemId: item.id,
+        descricao: item.descricao,
+        turno: item.turno,
+        atualizadoEm: agoraIso,
+      }, { merge: true });
+      registrar('editar', 'avaliacao-tarefa', item.id, `${posicao}: ${nome || '—'} · ${item.descricao.slice(0, 40)}`);
+    } catch (err) {
+      console.error('Erro ao salvar avaliação:', err);
+      mostrarFeedback('erro', 'Erro ao salvar a avaliação.');
+      carregarAvaliacoes(); // reverte para o estado do servidor
+    }
+  };
+
+  const salvarPontosExtras = async () => {
+    const pts = Number(formPontos.pontos);
+    if (!formPontos.tecnico) { mostrarFeedback('erro', 'Selecione o técnico.'); return; }
+    if (!pts || pts <= 0) { mostrarFeedback('erro', 'Informe uma pontuação maior que zero.'); return; }
+    if (!formPontos.motivo.trim()) { mostrarFeedback('erro', 'Descreva o motivo dos pontos extras.'); return; }
+    setSalvandoPontos(true);
+    try {
+      const ref = await addDoc(collection(db, 'pontos-extras'), {
+        tecnico: formPontos.tecnico,
+        pontos: pts,
+        motivo: formPontos.motivo.trim(),
+        dadoPor: perfil?.nome ?? 'admin',
+        criadoEm: new Date().toISOString(),
+      });
+      registrar('criar', 'ponto-extra', ref.id, `+${pts} p/ ${formPontos.tecnico}: ${formPontos.motivo.trim()}`);
+      setModalPontosAberto(false);
+      await carregarPontosExtras();
+      mostrarFeedback('ok', `+${pts} pontos para ${formPontos.tecnico}!`);
+    } catch (err) {
+      console.error('Erro ao dar pontos:', err);
+      mostrarFeedback('erro', 'Erro ao registrar os pontos.');
+    } finally {
+      setSalvandoPontos(false);
+    }
+  };
+
+  const iniciarCompeticao = async () => {
+    const ok = await confirmar({
+      titulo: 'Iniciar nova competição',
+      mensagem: 'Começar uma nova competição? A pontuação recomeça do zero a partir de agora — o resultado anterior continua salvo no histórico.',
+      textoConfirmar: 'Iniciar',
+    });
+    if (!ok) return;
+    setProcessandoComp(true);
+    try {
+      const agoraIso = new Date().toISOString();
+      const ref = await addDoc(collection(db, 'competicoes'), {
+        inicio: agoraIso,
+        fim: null,
+        status: 'ativa',
+        criadoPor: perfil?.nome ?? 'admin',
+        criadoEm: agoraIso,
+      });
+      registrar('criar', 'competicao', ref.id, 'Competição iniciada');
+      await carregarCompeticao();
+      mostrarFeedback('ok', 'Nova competição iniciada! 🏁');
+    } catch (err) {
+      console.error('Erro ao iniciar competição:', err);
+      mostrarFeedback('erro', 'Erro ao iniciar a competição.');
+    } finally {
+      setProcessandoComp(false);
+    }
+  };
+
+  const encerrarCompeticao = async () => {
+    const vencedor = ranking[0]?.nome ?? null;
+    // Sem competição ativa = estamos encerrando o placar acumulado (pré-existente).
+    const encerrandoPlacarInicial = !competicaoAtiva;
+    const ok = await confirmar({
+      titulo: encerrandoPlacarInicial ? 'Encerrar placar atual' : 'Encerrar competição',
+      mensagem: encerrandoPlacarInicial
+        ? `Salvar a pontuação acumulada até agora como a primeira competição encerrada? 🥇 1º lugar: ${vencedor ?? '—'}. Depois você poderá iniciar uma nova competição do zero.`
+        : `Encerrar a competição atual e salvar o resultado? 🥇 1º lugar: ${vencedor ?? '—'}. A competição ficará pausada até você iniciar uma nova.`,
+      textoConfirmar: 'Encerrar e salvar',
+    });
+    if (!ok) return;
+    setProcessandoComp(true);
+    try {
+      const snapshot: RankingSnapshot[] = ranking.map(r => ({
+        nome: r.nome, total: r.total, pontosRotina: r.pontosRotina,
+        pontosExtras: r.pontosExtras, pontosTarefa: r.pontosTarefa, plantoes: r.plantoes,
+      }));
+      const fimIso = new Date().toISOString();
+      if (competicaoAtiva) {
+        await updateDoc(doc(db, 'competicoes', competicaoAtiva.id), {
+          status: 'encerrada', fim: fimIso, vencedor, ranking: snapshot,
+        });
+        registrar('editar', 'competicao', competicaoAtiva.id, `Encerrada · 1º ${vencedor ?? '—'}`);
+      } else {
+        // Placar acumulado, sem documento de competição: cria um já encerrado.
+        const ref = await addDoc(collection(db, 'competicoes'), {
+          inicio: null, fim: fimIso, status: 'encerrada', vencedor, ranking: snapshot,
+          criadoPor: perfil?.nome ?? 'admin', criadoEm: fimIso,
+        });
+        registrar('criar', 'competicao', ref.id, `Placar inicial encerrado · 1º ${vencedor ?? '—'}`);
+      }
+      await carregarCompeticao();
+      mostrarFeedback('ok', 'Placar encerrado e resultado salvo! 🏆');
+    } catch (err) {
+      console.error('Erro ao encerrar competição:', err);
+      mostrarFeedback('erro', 'Erro ao encerrar a competição.');
+    } finally {
+      setProcessandoComp(false);
+    }
+  };
 
   useEffect(() => {
     if (abaAtiva === 'checklist') carregarExecucaoExistente(dataChecklist, turnoChecklist);
@@ -269,7 +693,13 @@ const RotinaCuidados: React.FC = () => {
   };
 
   const excluirItem = async (id: string) => {
-    if (!confirm('Excluir este item da rotina?')) return;
+    const ok = await confirmar({
+      titulo: 'Excluir item da rotina',
+      mensagem: 'Tem certeza que deseja excluir este item da rotina?',
+      textoConfirmar: 'Excluir',
+      destrutivo: true,
+    });
+    if (!ok) return;
     try {
       await deleteDoc(doc(db, 'rotina-items', id));
       setItens(prev => prev.filter(i => i.id !== id));
@@ -299,12 +729,17 @@ const RotinaCuidados: React.FC = () => {
     setSalvando(true);
     try {
       const itensTurno = itens.filter(i => i.turno === turnoChecklist && i.ativo);
-      const itensSalvos: ItemExecucao[] = itensTurno.map(item => ({
-        rotinaItemId: item.id,
-        concluido: checkMap[item.id]?.concluido ?? false,
-        observacao: checkMap[item.id]?.observacao ?? '',
-        horarioConcluido: checkMap[item.id]?.horarioConcluido,
-      }));
+      const itensSalvos: ItemExecucao[] = itensTurno.map(item => {
+        const check = checkMap[item.id];
+        const registro: ItemExecucao = {
+          rotinaItemId: item.id,
+          concluido: check?.concluido ?? false,
+          observacao: check?.observacao ?? '',
+        };
+        // O Firestore rejeita `undefined`: só inclui horarioConcluido quando existe.
+        if (check?.horarioConcluido) registro.horarioConcluido = check.horarioConcluido;
+        return registro;
+      });
 
       const agora = new Date().toISOString();
       const payload = {
@@ -316,11 +751,14 @@ const RotinaCuidados: React.FC = () => {
         atualizadoEm: agora,
       };
 
+      const resumoAud = `${formatarTurnoLabel(turnoChecklist)} · ${formatarData(dataChecklist)}`;
       if (execucaoAtualId) {
         await updateDoc(doc(db, 'rotina-execucoes', execucaoAtualId), payload);
+        registrar('editar', 'rotina-execucao', execucaoAtualId, resumoAud);
       } else {
         const ref = await addDoc(collection(db, 'rotina-execucoes'), { ...payload, criadoEm: agora });
         setExecucaoAtualId(ref.id);
+        registrar('criar', 'rotina-execucao', ref.id, resumoAud);
       }
       setChecklistSalvo(true);
       mostrarFeedback('ok', 'Checklist salvo com sucesso!');
@@ -406,6 +844,8 @@ const RotinaCuidados: React.FC = () => {
         {[
           { id: 'rotina', label: 'Rotina', icon: ClipboardList },
           { id: 'checklist', label: modo === 'auxiliar' ? 'Checklist do Turno' : 'Checklist', icon: CheckSquare },
+          { id: 'tecnicos', label: 'Técnicos', icon: Stethoscope },
+          { id: 'gamificacao', label: 'Placar', icon: Trophy },
           { id: 'historico', label: 'Histórico', icon: History },
         ].map(tab => (
           <button
@@ -526,13 +966,56 @@ const RotinaCuidados: React.FC = () => {
             </div>
             <div>
               <label className="text-xs font-medium text-gray-500 block mb-1">Técnico responsável</label>
-              <input
-                type="text"
-                placeholder="Nome do técnico"
-                value={auxiliarNome}
-                onChange={e => { setAuxiliarNome(e.target.value); setChecklistSalvo(false); }}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
-              />
+              {tecnicosAtivos.length > 0 ? (
+                <select
+                  value={auxiliarNome}
+                  onChange={e => { setAuxiliarNome(e.target.value); setChecklistSalvo(false); }}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                >
+                  <option value="">Selecione o técnico</option>
+                  {(() => {
+                    // Técnicos "deste turno": preferência == turno escolhido ou "ambos".
+                    const pref = (t: Tecnico) => t.turnoPreferencial ?? 'ambos';
+                    const deste = tecnicosAtivos.filter(t => pref(t) === turnoChecklist || pref(t) === 'ambos');
+                    const outros = tecnicosAtivos.filter(t => !(pref(t) === turnoChecklist || pref(t) === 'ambos'));
+                    return (
+                      <>
+                        {deste.length > 0 && (
+                          <optgroup label={`Deste turno (${turnoChecklist === 'manha' ? 'Manhã' : 'Noite'})`}>
+                            {deste.map(t => <option key={t.id} value={t.nome}>{t.nome}</option>)}
+                          </optgroup>
+                        )}
+                        {outros.length > 0 && (
+                          <optgroup label="Outros turnos">
+                            {outros.map(t => <option key={t.id} value={t.nome}>{t.nome}</option>)}
+                          </optgroup>
+                        )}
+                      </>
+                    );
+                  })()}
+                  {/* Mantém nome antigo (de um plantão já registrado) que não está mais na lista */}
+                  {auxiliarNome && !tecnicosAtivos.some(t => t.nome === auxiliarNome) && (
+                    <option value={auxiliarNome}>{auxiliarNome}</option>
+                  )}
+                </select>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Nome do técnico"
+                    value={auxiliarNome}
+                    onChange={e => { setAuxiliarNome(e.target.value); setChecklistSalvo(false); }}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAbaAtiva('tecnicos')}
+                    className="text-xs text-primary-600 hover:text-primary-700 mt-1"
+                  >
+                    + Cadastrar técnicos na aba Técnicos
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -627,9 +1110,449 @@ const RotinaCuidados: React.FC = () => {
         </div>
       )}
 
+      {/* ── ABA: TÉCNICOS ───────────────────────────────────────────────── */}
+      {abaAtiva === 'tecnicos' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <p className="text-sm text-gray-500">Técnicos que assumem os plantões. Aparecem como opção ao preencher o checklist.</p>
+            <button
+              onClick={abrirNovoTecnico}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shrink-0"
+            >
+              <UserPlus size={16} /> Novo técnico
+            </button>
+          </div>
+
+          {carregandoTecnicos ? (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <RefreshCw size={20} className="animate-spin mr-2" /> Carregando técnicos...
+            </div>
+          ) : tecnicos.length === 0 ? (
+            <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
+              <Stethoscope size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Nenhum técnico cadastrado ainda.</p>
+              <p className="text-xs mt-1">Cadastre os técnicos para selecioná-los no checklist do plantão.</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+              {tecnicos.map(t => (
+                <div key={t.id} className="flex items-center gap-3 px-4 py-3">
+                  <div className={`p-2 rounded-lg ${t.ativo ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}>
+                    <Stethoscope size={18} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium text-gray-800">{t.nome}</span>
+                      {!t.ativo && <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">Inativo</span>}
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600">
+                        {t.turnoPreferencial === 'manha' ? 'Manhã' : t.turnoPreferencial === 'noite' ? 'Noite' : 'Ambos'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-4 mt-0.5 text-xs text-gray-500">
+                      {t.telefone && <span className="flex items-center gap-1"><Phone size={11} /> {t.telefone}</span>}
+                      {t.registro && <span className="flex items-center gap-1"><BadgeCheck size={11} /> {t.registro}</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => abrirEdicaoTecnico(t)} className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
+                      <Edit2 size={14} />
+                    </button>
+                    <button onClick={() => excluirTecnico(t)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ABA: GAMIFICAÇÃO ────────────────────────────────────────────── */}
+      {abaAtiva === 'gamificacao' && (
+        <div>
+          {/* Banner */}
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-600 p-6 text-white mb-5 shadow-lg">
+            <div className="absolute -right-6 -top-8 opacity-20 pointer-events-none"><Trophy size={130} /></div>
+            <div className="relative flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <h2 className="text-xl font-bold flex items-center gap-2"><Sparkles size={20} /> Placar dos Técnicos</h2>
+                <p className="text-sm text-white/80 mt-1 max-w-md">
+                  Cada plantão vale pontos conforme a % de itens da rotina concluídos. Quanto mais completo o checklist, mais pontos!
+                </p>
+              </div>
+              {temPapel(['admin']) && competicaoAtiva && (
+                <button
+                  onClick={abrirModalPontos}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/15 hover:bg-white/25 backdrop-blur text-sm font-semibold border border-white/20 transition-colors shrink-0"
+                >
+                  <Gift size={16} /> Dar pontos extras
+                </button>
+              )}
+            </div>
+            <div className="relative flex flex-wrap gap-2 mt-4">
+              {[['100%', '6'], ['90–99%', '5'], ['80–89%', '4'], ['70–79%', '3'], ['60–69%', '2'], ['50–59%', '1']].map(([faixa, pts]) => (
+                <span key={faixa} className="text-xs bg-white/15 border border-white/20 rounded-full px-2.5 py-1 font-medium">
+                  {faixa} = {pts} pts
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Sub-abas do Placar */}
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-5">
+            {[
+              { id: 'ranking', label: 'Ranking', icon: Trophy },
+              { id: 'avaliacao', label: 'Avaliação por tarefa', icon: Star },
+            ].map(st => (
+              <button
+                key={st.id}
+                onClick={() => setAbaPlacar(st.id as typeof abaPlacar)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${abaPlacar === st.id ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                <st.icon size={15} />
+                <span className="hidden sm:inline">{st.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {abaPlacar === 'ranking' && (
+          <div>
+          {/* Controle da competição */}
+          <div className="rounded-2xl border border-gray-100 bg-white p-4 mb-4 flex items-center justify-between gap-3 flex-wrap">
+            {competicaoAtiva ? (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="font-medium">Competição em andamento</span>
+                <span className="text-gray-400">desde {formatarDataBR(competicaoAtiva.inicio)}</span>
+              </div>
+            ) : ultimaCompeticao ? (
+              <div className="flex items-center gap-2 text-sm text-gray-700">
+                <span className="w-2 h-2 rounded-full bg-gray-300" />
+                <span className="font-medium">Competição pausada</span>
+                <span className="text-gray-400">última encerrada em {formatarDataBR(ultimaCompeticao.fim)}</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <span className="w-2 h-2 rounded-full bg-gray-300" />
+                <span>Nenhuma competição em andamento</span>
+              </div>
+            )}
+
+            {temPapel(['admin']) && (
+              competicaoAtiva ? (
+                <button onClick={encerrarCompeticao} disabled={processandoComp}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-sm font-semibold transition-colors disabled:opacity-50">
+                  {processandoComp ? <RefreshCw size={15} className="animate-spin" /> : <Flag size={15} />} Encerrar competição
+                </button>
+              ) : (
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Placar acumulado de antes das competições: permite encerrá-lo e salvar */}
+                  {!ultimaCompeticao && ranking.some(r => r.total > 0) && (
+                    <button onClick={encerrarCompeticao} disabled={processandoComp}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 text-sm font-semibold transition-colors disabled:opacity-50">
+                      {processandoComp ? <RefreshCw size={15} className="animate-spin" /> : <Flag size={15} />} Encerrar placar atual
+                    </button>
+                  )}
+                  <button onClick={iniciarCompeticao} disabled={processandoComp}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white text-sm font-semibold hover:opacity-90 transition-opacity disabled:opacity-50">
+                    {processandoComp ? <RefreshCw size={15} className="animate-spin" /> : <Flag size={15} />} {ultimaCompeticao ? 'Iniciar nova competição' : 'Iniciar competição'}
+                  </button>
+                </div>
+              )
+            )}
+          </div>
+
+          {/* Pausada (sem competição ativa mas com resultado salvo) → mostra o resultado final */}
+          {!competicaoAtiva && ultimaCompeticao ? (
+            <div>
+              <div className="rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 p-5 text-white mb-4 flex items-center gap-3">
+                <Trophy size={28} />
+                <div>
+                  <p className="text-xs uppercase tracking-wider text-white/80 font-semibold">Resultado da última competição</p>
+                  <p className="text-lg font-bold">🏆 {ultimaCompeticao.vencedor ?? 'Sem vencedor'}</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {(ultimaCompeticao.ranking ?? []).map((r, idx) => {
+                  const medalha = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                  return (
+                    <div key={r.nome} className="rounded-2xl border border-gray-100 bg-white p-4 flex items-center gap-4">
+                      <div className="w-10 text-center shrink-0">
+                        {medalha ? <span className="text-2xl">{medalha}</span> : <span className="text-lg font-bold text-gray-400">{idx + 1}º</span>}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="font-bold text-gray-800">{r.nome}</span>
+                        <p className="text-[11px] text-gray-400 mt-0.5">{r.plantoes} plantão(ões) · {r.pontosRotina} de rotina{r.pontosTarefa > 0 ? ` · +${r.pontosTarefa} tarefas` : ''}{r.pontosExtras > 0 ? ` · +${r.pontosExtras} extras` : ''}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div className="text-2xl font-extrabold text-primary-600">{r.total}</div>
+                        <div className="text-[10px] uppercase tracking-wider text-gray-400">pontos</div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {(ultimaCompeticao.ranking ?? []).length === 0 && (
+                  <p className="text-sm text-gray-400 text-center py-8">A competição foi encerrada sem pontuação registrada.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+          <>
+          {/* Ranking */}
+          {(carregandoExec || carregandoPontos) ? (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <RefreshCw size={20} className="animate-spin mr-2" /> Carregando placar...
+            </div>
+          ) : ranking.filter(r => r.total > 0 || r.plantoes > 0).length === 0 ? (
+            <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
+              <Trophy size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Ainda não há pontuação.</p>
+              <p className="text-xs mt-1">Os pontos aparecem conforme os checklists de plantão forem salvos.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {ranking.map((r, idx) => {
+                const nv = nivelDe(r.total);
+                const NvIcon = nv.icon;
+                const medalha = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                const destaque = idx === 0;
+                return (
+                  <div
+                    key={r.nome}
+                    className={`rounded-2xl border p-4 flex items-center gap-4 transition-all ${
+                      destaque ? 'bg-gradient-to-r from-slate-900 to-slate-800 border-fuchsia-500/40 text-white shadow-lg' : 'bg-white border-gray-100'
+                    }`}
+                  >
+                    <div className="w-10 text-center shrink-0">
+                      {medalha ? (
+                        <span className="text-2xl">{medalha}</span>
+                      ) : (
+                        <span className={`text-lg font-bold ${destaque ? 'text-white/70' : 'text-gray-400'}`}>{idx + 1}º</span>
+                      )}
+                    </div>
+                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${nv.cor} flex items-center justify-center shrink-0 shadow`}>
+                      <NvIcon size={22} className="text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-bold truncate ${destaque ? 'text-white' : 'text-gray-800'}`}>{r.nome}</span>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold bg-gradient-to-r ${nv.cor} text-white`}>{nv.titulo}</span>
+                      </div>
+                      <div className="mt-2">
+                        <div className={`h-2 rounded-full overflow-hidden ${destaque ? 'bg-white/15' : 'bg-gray-100'}`}>
+                          <div className={`h-full bg-gradient-to-r ${nv.cor} transition-all`} style={{ width: `${nv.pct}%` }} />
+                        </div>
+                        <div className={`flex justify-between text-[11px] mt-1 ${destaque ? 'text-white/60' : 'text-gray-400'}`}>
+                          <span>{r.plantoes} plantão(ões) · {r.pontosRotina} de rotina{r.pontosTarefa > 0 ? ` · +${r.pontosTarefa} tarefas` : ''}{r.pontosExtras > 0 ? ` · +${r.pontosExtras} extras` : ''}</span>
+                          <span>{nv.prox ? `${nv.restante} p/ ${nv.prox.titulo}` : 'nível máximo'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className={`text-2xl font-extrabold leading-none ${destaque ? 'text-fuchsia-300' : 'text-primary-600'}`}>{r.total}</div>
+                      <div className={`text-[10px] uppercase tracking-wider ${destaque ? 'text-white/50' : 'text-gray-400'}`}>pontos</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Pontos extras recentes */}
+          {pontosExtras.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Gift size={13} /> Pontos extras concedidos
+              </h3>
+              <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                {[...pontosExtras].sort((a, b) => b.criadoEm.localeCompare(a.criadoEm)).slice(0, 10).map(p => (
+                  <div key={p.id} className="px-4 py-2.5 flex items-start gap-3">
+                    <span className="text-sm font-bold text-fuchsia-600 shrink-0 mt-0.5">+{p.pontos}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800"><span className="font-medium">{p.tecnico}</span> — {p.motivo}</p>
+                      <p className="text-[11px] text-gray-400">por {p.dadoPor} · {formatarDataHoraBR(p.criadoEm)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          </>
+          )}
+
+          {/* Histórico de competições anteriores */}
+          {competicoesEncerradas.length > 0 && (
+            <div className="mt-8">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <History size={13} /> Competições anteriores
+              </h3>
+              <div className="space-y-2">
+                {competicoesEncerradas.map(comp => {
+                  const aberto = competicaoExpandida === comp.id;
+                  return (
+                    <div key={comp.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                      <button
+                        onClick={() => setCompeticaoExpandida(aberto ? null : comp.id)}
+                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left"
+                      >
+                        <div className="p-2 rounded-lg bg-amber-50 text-amber-500"><Trophy size={16} /></div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-800 truncate">🏆 {comp.vencedor ?? 'Sem vencedor'}</p>
+                          <p className="text-[11px] text-gray-400">{formatarDataBR(comp.inicio)} — {formatarDataBR(comp.fim)}</p>
+                        </div>
+                        {aberto ? <ChevronUp size={16} className="text-gray-400 shrink-0" /> : <ChevronDown size={16} className="text-gray-400 shrink-0" />}
+                      </button>
+                      {aberto && (
+                        <div className="border-t border-gray-50 px-4 py-3 space-y-1.5">
+                          {(comp.ranking ?? []).length === 0 ? (
+                            <p className="text-xs text-gray-400 py-2">Sem pontuação registrada nesta competição.</p>
+                          ) : (
+                            (comp.ranking ?? []).map((r, idx) => {
+                              const medalha = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null;
+                              return (
+                                <div key={r.nome} className="flex items-center gap-3">
+                                  <span className="w-7 text-center shrink-0 text-sm">{medalha ?? <span className="text-xs font-bold text-gray-400">{idx + 1}º</span>}</span>
+                                  <span className="flex-1 text-sm text-gray-700 truncate">{r.nome}</span>
+                                  <span className="text-sm font-bold text-primary-600 shrink-0">{r.total} pts</span>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          </div>
+          )}
+
+          {abaPlacar === 'avaliacao' && (
+            <div>
+              <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
+                <p className="text-sm text-gray-600">
+                  Para cada tarefa da rotina, indique quem executou melhor:{' '}
+                  <span className="font-semibold text-yellow-600">1º</span>,{' '}
+                  <span className="font-semibold text-gray-500">2º</span> e{' '}
+                  <span className="font-semibold text-amber-700">3º</span>.{' '}
+                  <span className="font-medium">Quem fica em 1º ganha 1 ponto no placar.</span>
+                </p>
+                {!temPapel(['admin']) ? (
+                  <p className="text-xs text-amber-600 mt-2">Somente o administrador pode editar as avaliações.</p>
+                ) : !competicaoAtiva ? (
+                  <p className="text-xs text-amber-600 mt-2">Inicie uma competição (aba Ranking) para avaliar as tarefas e pontuar.</p>
+                ) : null}
+              </div>
+
+              {tecnicosAtivos.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">
+                  <Stethoscope size={36} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">Cadastre técnicos na aba <span className="font-medium">Técnicos</span> para poder avaliar as tarefas.</p>
+                </div>
+              ) : itens.length === 0 ? (
+                <div className="flex items-center justify-center py-12 text-gray-400">
+                  <RefreshCw size={20} className="animate-spin mr-2" /> Carregando tarefas...
+                </div>
+              ) : (
+                (['manha', 'noite'] as const).map(turno => {
+                  const secoes = itensPorTurnoSecao(turno);
+                  const cfg = TURNO_CONFIG[turno];
+                  const TurnoIcon = cfg.icon;
+                  return (
+                    <div key={turno} className="mb-6">
+                      <div className={`flex items-center gap-2 mb-3 ${cfg.color}`}>
+                        <TurnoIcon size={16} />
+                        <h3 className="text-sm font-semibold">{cfg.label}</h3>
+                      </div>
+                      {Object.entries(secoes).map(([secao, items]) => (
+                        <div key={secao} className="mb-4">
+                          <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{secao}</h4>
+                          <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
+                            {items.map(item => {
+                              // Mostra a avaliação apenas se for da competição atual.
+                              const av = noPeriodoComp(avaliacoes[item.id]?.atualizadoEm) ? (avaliacoes[item.id] ?? {}) : {};
+                              return (
+                                <div key={item.id} className="px-4 py-3">
+                                  <div className="flex items-start gap-2 mb-2">
+                                    <span className="text-xs font-mono text-gray-400 mt-0.5 min-w-[38px]">{item.horario}</span>
+                                    <p className="text-sm text-gray-700 flex-1">{item.descricao}</p>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:pl-[46px]">
+                                    {([['primeiro', '1º', 'text-yellow-600'], ['segundo', '2º', 'text-gray-500'], ['terceiro', '3º', 'text-amber-700']] as const).map(([pos, label, cor]) => (
+                                      <div key={pos} className="flex items-center gap-2">
+                                        <span className={`text-xs font-bold w-5 shrink-0 ${cor}`}>{label}</span>
+                                        <select
+                                          value={av[pos] ?? ''}
+                                          disabled={!temPapel(['admin']) || !competicaoAtiva}
+                                          onChange={e => definirAvaliacao(item, pos, e.target.value)}
+                                          className="flex-1 min-w-0 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary-300 disabled:bg-gray-50 disabled:text-gray-500"
+                                        >
+                                          <option value="">—</option>
+                                          {tecnicosAtivos.map(t => <option key={t.id} value={t.nome}>{t.nome}</option>)}
+                                        </select>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── ABA: HISTÓRICO ──────────────────────────────────────────────── */}
       {abaAtiva === 'historico' && (
         <div>
+          {/* Card de disponibilidade do serviço */}
+          <div className="bg-white rounded-xl border border-gray-100 p-5 mb-4">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600"><Activity size={18} /></div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-800">Disponibilidade do serviço</h3>
+                <p className="text-xs text-gray-400">% de turnos com técnica presente (registro de checklist). Turno sem registro = falta.</p>
+              </div>
+            </div>
+            {carregandoExec ? (
+              <div className="flex items-center justify-center py-6 text-gray-400">
+                <RefreshCw size={18} className="animate-spin mr-2" /> Calculando...
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Semanal', sub: '7 dias', dado: disponibilidade.semanal },
+                  { label: 'Mensal', sub: '30 dias', dado: disponibilidade.mensal },
+                  { label: 'Anual', sub: '365 dias', dado: disponibilidade.anual },
+                ].map(({ label, sub, dado }) => {
+                  const pct = dado.pct;
+                  const cor = pct === null ? 'text-gray-400' : pct >= 90 ? 'text-emerald-600' : pct >= 75 ? 'text-amber-500' : 'text-red-500';
+                  const barra = pct === null ? 'bg-gray-200' : pct >= 90 ? 'bg-emerald-500' : pct >= 75 ? 'bg-amber-500' : 'bg-red-500';
+                  return (
+                    <div key={label} className="rounded-xl border border-gray-100 p-3 text-center">
+                      <p className="text-[11px] uppercase tracking-wider text-gray-400 font-semibold">{label}</p>
+                      <p className="text-[10px] text-gray-300 -mt-0.5">{sub}</p>
+                      <p className={`text-2xl font-extrabold mt-1 ${cor}`}>{pct === null ? '—' : `${pct}%`}</p>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mt-2">
+                        <div className={`h-full ${barra} transition-all`} style={{ width: pct === null ? '0%' : `${pct}%` }} />
+                      </div>
+                      <p className="text-[11px] text-gray-400 mt-1">{dado.cobertos}/{dado.esperados} turnos</p>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {carregandoExec ? (
             <div className="flex items-center justify-center py-12 text-gray-400">
               <RefreshCw size={20} className="animate-spin mr-2" /> Carregando histórico...
@@ -640,9 +1563,37 @@ const RotinaCuidados: React.FC = () => {
               <p className="text-sm">Nenhum registro ainda.</p>
               <p className="text-xs mt-1">Os check-ins salvos pelo técnico aparecerão aqui.</p>
             </div>
-          ) : (
+          ) : (() => {
+            // Nomes de técnicos presentes no histórico (para o filtro).
+            const nomesNoHistorico = Array.from(new Set(execucoes.map(e => e.auxiliar).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+            const execucoesFiltradas = filtroTecnicoHist === 'todos'
+              ? execucoes
+              : execucoes.filter(e => e.auxiliar === filtroTecnicoHist);
+            return (
             <div className="space-y-3">
-              {execucoes.map(exec => {
+              {/* Filtro por técnico */}
+              <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap">
+                <Stethoscope size={16} className="text-gray-400" />
+                <label className="text-sm text-gray-600">Técnico:</label>
+                <select
+                  value={filtroTecnicoHist}
+                  onChange={e => setFiltroTecnicoHist(e.target.value)}
+                  className="py-1.5 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
+                >
+                  <option value="todos">Todos os técnicos</option>
+                  {nomesNoHistorico.map(nome => (
+                    <option key={nome} value={nome}>{nome}</option>
+                  ))}
+                </select>
+                <span className="text-xs text-gray-400 ml-auto">{execucoesFiltradas.length} plantão(ões)</span>
+              </div>
+
+              {execucoesFiltradas.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">
+                  <p className="text-sm">Nenhum plantão registrado para este técnico.</p>
+                </div>
+              ) : (
+              execucoesFiltradas.map(exec => {
                 const cfg = TURNO_CONFIG[exec.turno];
                 const Icon = cfg.icon;
                 const total = exec.itens.length;
@@ -674,6 +1625,22 @@ const RotinaCuidados: React.FC = () => {
 
                     {aberto && (
                       <div className="border-t border-gray-50 px-4 py-4">
+                        {/* Admin pode corrigir um registro de plantão já salvo */}
+                        {temPapel(['admin']) && (
+                          <div className="flex justify-end mb-4">
+                            <button
+                              onClick={() => {
+                                setDataChecklist(exec.data);
+                                setTurnoChecklist(exec.turno);
+                                setAbaAtiva('checklist');
+                              }}
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors"
+                            >
+                              <Edit2 size={14} /> Editar este registro
+                            </button>
+                          </div>
+                        )}
+
                         {/* Agrupa itens por seção */}
                         {(() => {
                           const itensTurno = itens.filter(i => i.turno === exec.turno && i.ativo);
@@ -723,9 +1690,11 @@ const RotinaCuidados: React.FC = () => {
                     )}
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
-          )}
+            );
+          })()}
         </div>
       )}
 
@@ -861,6 +1830,162 @@ const RotinaCuidados: React.FC = () => {
           </div>
         </Dialog>
       </Transition>
+
+      {/* ── Modal cadastro/edição de técnico ─────────────────────────────── */}
+      {modalTecnicoAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setModalTecnicoAberto(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold text-gray-800">
+                {tecnicoEditandoId ? 'Editar técnico' : 'Novo técnico'}
+              </h2>
+              <button onClick={() => setModalTecnicoAberto(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Nome</label>
+                <input
+                  type="text" value={formTecnico.nome} placeholder="Ex: Maria Souza"
+                  onChange={e => setFormTecnico(p => ({ ...p, nome: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Telefone</label>
+                  <input
+                    type="text" value={formTecnico.telefone} placeholder="(00) 00000-0000"
+                    onChange={e => setFormTecnico(p => ({ ...p, telefone: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">COREN</label>
+                  <input
+                    type="text" value={formTecnico.registro} placeholder="COREN 000000"
+                    onChange={e => setFormTecnico(p => ({ ...p, registro: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Turno preferencial</label>
+                  <select
+                    value={formTecnico.turnoPreferencial}
+                    onChange={e => setFormTecnico(p => ({ ...p, turnoPreferencial: e.target.value as Tecnico['turnoPreferencial'] }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  >
+                    <option value="ambos">Ambos</option>
+                    <option value="manha">Manhã (7h–19h)</option>
+                    <option value="noite">Noite (19h–7h)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-500 block mb-1">Situação</label>
+                  <select
+                    value={formTecnico.ativo ? 'ativo' : 'inativo'}
+                    onChange={e => setFormTecnico(p => ({ ...p, ativo: e.target.value === 'ativo' }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  >
+                    <option value="ativo">Ativo</option>
+                    <option value="inativo">Inativo</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setModalTecnicoAberto(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={salvarTecnico} disabled={salvandoTecnico}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+              >
+                {salvandoTecnico ? <RefreshCw size={15} className="animate-spin" /> : (tecnicoEditandoId ? 'Salvar' : 'Cadastrar')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal conceder pontos extras (admin) ─────────────────────────── */}
+      {modalPontosAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setModalPontosAberto(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold text-gray-800 flex items-center gap-2">
+                <Gift size={18} className="text-fuchsia-600" /> Dar pontos extras
+              </h2>
+              <button onClick={() => setModalPontosAberto(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded-lg">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Técnico</label>
+                <select
+                  value={formPontos.tecnico}
+                  onChange={e => setFormPontos(p => ({ ...p, tecnico: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                >
+                  <option value="">Selecione o técnico</option>
+                  {ranking.map(r => <option key={r.nome} value={r.nome}>{r.nome}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Pontos</label>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {[1, 3, 5, 10].map(v => (
+                    <button
+                      key={v} type="button"
+                      onClick={() => setFormPontos(p => ({ ...p, pontos: v }))}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-semibold border transition-colors ${
+                        formPontos.pontos === v ? 'bg-primary-600 text-white border-primary-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      +{v}
+                    </button>
+                  ))}
+                  <input
+                    type="number" min={1} value={formPontos.pontos}
+                    onChange={e => setFormPontos(p => ({ ...p, pontos: Number(e.target.value) }))}
+                    className="w-20 border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-500 block mb-1">Motivo <span className="text-red-500">*</span></label>
+                <textarea
+                  rows={3} value={formPontos.motivo}
+                  onChange={e => setFormPontos(p => ({ ...p, motivo: e.target.value }))}
+                  placeholder="Ex: assumiu plantão extra, cuidado excepcional com o paciente, organização impecável..."
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-300"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setModalPontosAberto(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancelar
+              </button>
+              <button
+                onClick={salvarPontosExtras} disabled={salvandoPontos}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 text-white text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                {salvandoPontos ? <RefreshCw size={15} className="animate-spin" /> : <><Gift size={15} /> Conceder</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

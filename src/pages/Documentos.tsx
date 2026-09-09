@@ -4,6 +4,8 @@ import { ref, uploadBytesResumable, getDownloadURL, uploadBytes} from 'firebase/
 import { db, storage } from '../config/firebase';
 import { ChevronDown, ChevronRight, FilePlus, FileText, Filter, Folder, Search, Upload } from 'lucide-react';
 import {addDoc , Timestamp , getDocs , collection} from 'firebase/firestore';
+import { useAuditoria } from '../config/auditoria';
+import { formatarDataBR, hojeISO } from '../utils/datas';
 
 interface Documento {
   id: string;
@@ -88,6 +90,7 @@ interface Documento {
 ]; */
 
 const Documentos: React.FC = () => {
+  const { registrar } = useAuditoria();
   const [busca, setBusca] = useState<string>('');
   const [categoriaSelecionada, setCategoriaSelecionada] = useState<string>('todas');
   const [categoriaExpandida, setCategoriaExpandida] = useState<{ [key: string]: boolean }>({
@@ -144,7 +147,7 @@ const handleUpload = () => {
           nome: arquivo.name, // mantém o nome original para exibir ao usuário
           tipo: arquivo.type.split("/")[1]?.toUpperCase() || "PDF",
           categoria: "Exames",
-          data: new Date().toLocaleDateString("pt-BR"),
+          data: hojeISO(),
           tamanho: `${(arquivo.size / 1024 / 1024).toFixed(1)} MB`,
           origem: "Usuário",
           descricao: "",
@@ -152,9 +155,8 @@ const handleUpload = () => {
           criadoEm: Timestamp.now(),
         };
 
-        await addDoc(collection(db, "documentos"), documentoData);
-
-        console.log("Documento salvo com sucesso!");
+        const ref = await addDoc(collection(db, "documentos"), documentoData);
+        registrar('criar', 'documento', ref.id, arquivo.name);
       } catch (err) {
         console.error("Erro ao salvar no Firestore:", err);
       }
@@ -456,7 +458,7 @@ const buscarDocumentos = async () => {
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          {documento.data}
+                          {formatarDataBR(documento.data)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {documento.origem}

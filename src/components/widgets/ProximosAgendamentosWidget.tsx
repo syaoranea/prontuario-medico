@@ -6,7 +6,7 @@ import { Agendamento } from '../../interface/interface';
 interface ProximosAgendamentosWidgetProps {
   agendamentos: Agendamento[];
   onConfirmar?: (id: string) => void;
-  onReagendar?: (id: string) => void;
+  onReagendar?: (agendamento: Agendamento) => void;
 }
 
 const ProximosAgendamentosWidget: React.FC<ProximosAgendamentosWidgetProps> = ({
@@ -79,7 +79,7 @@ const ProximosAgendamentosWidget: React.FC<ProximosAgendamentosWidgetProps> = ({
                 <div className="mt-3 flex justify-end space-x-2">
                   <button
                     type="button"
-                    onClick={() => onReagendar(agendamento.id)}
+                    onClick={() => onReagendar(agendamento)}
                     className="px-3 py-1 text-xs border border-gray-300 rounded hover:bg-gray-100 transition-colors"
                   >
                     Reagendar

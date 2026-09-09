@@ -44,7 +44,6 @@ interface MedicamentoWidgetProps {
 const MedicamentosWidget: React.FC<MedicamentoWidgetProps> = ({
   medicamentos,
 }) => {
-  console.log('MedicamentosWidget prop:', medicamentos);
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
       <div className="flex items-center justify-between mb-6">

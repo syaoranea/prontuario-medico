@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elo — O elo do cuidado</title>
+  <meta name="description" content="Elo é o prontuário digital do cuidado domiciliar: rotina de plantão, checklist, passagem de turno, métricas e placar da equipe — tudo conectado, plantão a plantão." />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --primary:#0A6EBD; --primary-600:#0958a5; --primary-700:#07426d; --primary-900:#042135;
+      --secondary:#12B886; --secondary-600:#0f9a70;
+      --ink:#0f2333; --muted:#5b7387; --bg:#f6f9fc; --card:#ffffff; --line:#e6eef5;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{
+      font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--bg);
+      -webkit-font-smoothing:antialiased;line-height:1.55;overflow-x:hidden;
+    }
+    a{text-decoration:none;color:inherit}
+    .wrap{max-width:1160px;margin:0 auto;padding:0 24px}
+    .btn{
+      display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:15px;
+      padding:13px 22px;border-radius:12px;cursor:pointer;border:none;transition:.2s;white-space:nowrap;
+    }
+    .btn-primary{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;box-shadow:0 10px 24px -8px rgba(10,110,189,.55)}
+    .btn-primary:hover{transform:translateY(-2px);box-shadow:0 16px 30px -8px rgba(10,110,189,.6)}
+    .btn-ghost{background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(6px)}
+    .btn-ghost:hover{background:rgba(255,255,255,.16)}
+    .btn-light{background:#fff;color:var(--primary-700);border:1px solid var(--line)}
+    .btn-light:hover{transform:translateY(-2px);box-shadow:0 12px 24px -10px rgba(7,66,109,.35)}
+
+    /* NAV */
+    header{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);background:rgba(4,33,53,.55);border-bottom:1px solid rgba(255,255,255,.08)}
+    nav{display:flex;align-items:center;justify-content:space-between;height:66px}
+    .logo{display:flex;align-items:center;gap:10px;color:#fff}
+    .logo .mark{width:34px;height:34px}
+    .logo b{font-size:22px;font-weight:800;letter-spacing:-.5px}
+    .logo span{font-size:11px;color:rgba(255,255,255,.6);display:block;margin-top:-3px}
+    .nav-links{display:flex;gap:30px;align-items:center}
+    .nav-links a{color:rgba(255,255,255,.82);font-size:14.5px;font-weight:500;transition:.2s}
+    .nav-links a:hover{color:#fff}
+    @media(max-width:820px){.nav-links{display:none}}
+
+    /* HERO */
+    .hero{position:relative;background:radial-gradient(1200px 600px at 78% -10%,rgba(18,184,134,.22),transparent 55%),linear-gradient(160deg,var(--primary-900) 0%,var(--primary-700) 55%,#063a5f 100%);color:#fff;overflow:hidden}
+    .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:20px;align-items:center;min-height:640px;padding:56px 0 70px}
+    .badge{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;color:#d6ecff}
+    .badge .dot{width:7px;height:7px;border-radius:50%;background:var(--secondary);box-shadow:0 0 0 4px rgba(18,184,134,.25)}
+    h1{font-size:clamp(2.4rem,5vw,3.9rem);line-height:1.04;font-weight:900;letter-spacing:-1.5px;margin:22px 0 18px}
+    h1 .grad{background:linear-gradient(100deg,#7fe7c4,#68b6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .lead{font-size:clamp(1.05rem,2vw,1.22rem);color:rgba(255,255,255,.82);max-width:520px}
+    .hero-cta{display:flex;gap:14px;margin-top:32px;flex-wrap:wrap}
+    .hero-stats{display:flex;gap:34px;margin-top:44px;flex-wrap:wrap}
+    .hero-stats div b{display:block;font-size:1.7rem;font-weight:800;background:linear-gradient(100deg,#7fe7c4,#8ec6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .hero-stats div span{font-size:13px;color:rgba(255,255,255,.6)}
+    .hero-3d{position:relative;height:520px}
+    #hero3d{width:100%;height:100%;display:block}
+    .hero-3d .glow{position:absolute;inset:0;background:radial-gradient(closest-side,rgba(18,184,134,.28),transparent 70%);filter:blur(30px);z-index:-1}
+    .wave{display:block;width:100%;height:70px;margin-bottom:-6px}
+    @media(max-width:900px){
+      .hero-grid{grid-template-columns:1fr;min-height:auto;padding:36px 0 40px}
+      .hero-3d{height:360px;order:-1}
+    }
+
+    /* SECTIONS */
+    section.block{padding:84px 0}
+    .eyebrow{text-align:center;color:var(--secondary-600);font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+    .h2{text-align:center;font-size:clamp(1.8rem,3.5vw,2.5rem);font-weight:800;letter-spacing:-.8px;margin:10px auto 14px;max-width:720px}
+    .sub{text-align:center;color:var(--muted);max-width:620px;margin:0 auto 52px;font-size:1.05rem}
+
+    .features{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+    @media(max-width:880px){.features{grid-template-columns:1fr 1fr}}
+    @media(max-width:560px){.features{grid-template-columns:1fr}}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px;transition:.25s;position:relative;overflow:hidden}
+    .card:hover{transform:translateY(-5px);box-shadow:0 22px 40px -22px rgba(7,66,109,.4);border-color:#cfe2f2}
+    .ic{width:50px;height:50px;border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;background:linear-gradient(135deg,rgba(10,110,189,.12),rgba(18,184,134,.14))}
+    .ic svg{width:26px;height:26px;stroke:var(--primary);fill:none;stroke-width:1.8}
+    .card h3{font-size:1.12rem;font-weight:700;margin-bottom:7px}
+    .card p{color:var(--muted);font-size:.96rem}
+
+    /* ELO / continuity band */
+    .band{background:linear-gradient(160deg,#eef6fc,#e9f7f1);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .band .wrap{display:grid;grid-template-columns:1fr 1fr;gap:44px;align-items:center}
+    @media(max-width:820px){.band .wrap{grid-template-columns:1fr}}
+    .band h2{font-size:clamp(1.7rem,3vw,2.3rem);font-weight:800;letter-spacing:-.6px;margin-bottom:14px}
+    .band p{color:var(--muted);font-size:1.05rem;margin-bottom:14px}
+    .chain{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:22px}
+    .link-pill{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 16px;font-weight:600;font-size:.92rem}
+    .link-pill .n{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px}
+    .connector{color:var(--secondary);font-size:22px;font-weight:800}
+    @media(max-width:560px){.connector{display:none}}
+
+    /* CTA */
+    .cta{background:linear-gradient(135deg,var(--primary-900),var(--primary-700));color:#fff;border-radius:26px;padding:60px 40px;text-align:center;position:relative;overflow:hidden}
+    .cta h2{font-size:clamp(1.8rem,3.5vw,2.5rem);font-weight:800;letter-spacing:-.6px;margin-bottom:12px}
+    .cta p{color:rgba(255,255,255,.8);max-width:520px;margin:0 auto 28px}
+    .cta .halo{position:absolute;width:420px;height:420px;border-radius:50%;background:radial-gradient(closest-side,rgba(18,184,134,.35),transparent);top:-160px;right:-120px;filter:blur(20px)}
+
+    footer{padding:44px 0;color:var(--muted);font-size:14px}
+    footer .wrap{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+    footer .logo b{color:var(--ink)}
+    footer .logo span{color:var(--muted)}
+
+    /* reveal */
+    .reveal{opacity:0;transform:translateY(24px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+    .reveal.in{opacity:1;transform:none}
+  </style>
+</head>
+<body>
+
+  <!-- reusable logo mark: two interlocked rings -->
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="eloGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0A6EBD"/><stop offset="1" stop-color="#12B886"/>
+    </linearGradient>
+  </defs></svg>
+
+  <header>
+    <div class="wrap">
+      <nav>
+        <a class="logo" href="#top">
+          <svg class="mark" viewBox="0 0 40 40" fill="none">
+            <circle cx="15" cy="20" r="9.5" stroke="#68b6ff" stroke-width="3.2"/>
+            <circle cx="25" cy="20" r="9.5" stroke="#7fe7c4" stroke-width="3.2"/>
+          </svg>
+          <div><b>Elo</b><span>O elo do cuidado</span></div>
+        </a>
+        <div class="nav-links">
+          <a href="#recursos">Recursos</a>
+          <a href="#continuidade">Continuidade</a>
+          <a href="#seguranca">Segurança</a>
+          <a href="#comecar">Começar</a>
+        </div>
+        <a href="#" data-app class="btn btn-ghost">Entrar</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- HERO -->
+    <section class="hero">
+      <div class="wrap">
+        <div class="hero-grid">
+          <div>
+            <span class="badge"><span class="dot"></span> Cuidado domiciliar contínuo · 24h</span>
+            <h1>O <span class="grad">elo</span> entre cada<br>plantão do cuidado.</h1>
+            <p class="lead">
+              Elo conecta a equipe de enfermagem, a rotina do paciente e o prontuário num só lugar —
+              para que nenhum detalhe se perca na troca de turno.
+            </p>
+            <div class="hero-cta">
+              <a href="#" data-download class="btn btn-primary">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Baixar aplicativo
+              </a>
+              <a href="#recursos" class="btn btn-ghost">Ver recursos</a>
+            </div>
+            <div class="hero-stats">
+              <div><b>2</b><span>turnos conectados (12×36)</span></div>
+              <div><b>100%</b><span>do plantão registrado</span></div>
+              <div><b>LGPD</b><span>acesso por papel + auditoria</span></div>
+            </div>
+          </div>
+          <div class="hero-3d">
+            <div class="glow"></div>
+            <canvas id="hero3d"></canvas>
+          </div>
+        </div>
+      </div>
+      <svg class="wave" viewBox="0 0 1440 70" preserveAspectRatio="none" fill="#f6f9fc">
+        <path d="M0,40 C360,80 720,0 1080,32 C1260,48 1380,44 1440,38 L1440,70 L0,70 Z"/>
+      </svg>
+    </section>
+
+    <!-- FEATURES -->
+    <section class="block" id="recursos">
+      <div class="wrap">
+        <p class="eyebrow">Tudo em um só lugar</p>
+        <h2 class="h2">O prontuário pensado para quem cuida em casa</h2>
+        <p class="sub">Do registro clínico à rotina do plantão — feito para a realidade do home care.</p>
+        <div class="features">
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 12h6M9 16h6M9 8h6M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg></div>
+            <h3>Prontuário digital</h3>
+            <p>Histórico clínico, agendamentos, exames e documentos do paciente sempre à mão.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+            <h3>Rotina & checklist de plantão</h3>
+            <p>A rotina do dia por turno (manhã/noite), com checklist de tudo que foi realizado.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <h3>Passagem de plantão</h3>
+            <p>Cada turno recebe o resumo do anterior. A continuidade do cuidado nunca se perde.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 14l3-3 3 3 5-6"/></svg></div>
+            <h3>Métricas & medicação</h3>
+            <p>Sinais vitais, gráficos de evolução, controle de medicamentos e lembretes.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM17 5h2a2 2 0 0 1 0 4h-1M7 5H5a2 2 0 0 0 0 4h1"/></svg></div>
+            <h3>Placar da equipe</h3>
+            <p>Gamificação que reconhece as técnicas: pontos por plantão, competições e temporadas.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3"/></svg></div>
+            <h3>Disponibilidade do serviço</h3>
+            <p>% do tempo em que o paciente esteve assistido — semanal, mensal e anual.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CONTINUITY BAND -->
+    <section class="band block" id="continuidade">
+      <div class="wrap">
+        <div class="reveal">
+          <p class="eyebrow" style="text-align:left">Por que "Elo"</p>
+          <h2>Cada plantão é um elo. Juntos, uma corrente de cuidado.</h2>
+          <p>No home care 12×36, o cuidado passa de mão em mão. O Elo garante que a informação
+             passe junto — do que foi feito, ao que ainda falta, aos sinais que merecem atenção.</p>
+          <p>Sem papel perdido, sem "não me avisaram". Só continuidade.</p>
+          <div class="chain">
+            <div class="link-pill"><span class="n">☀</span> Turno da manhã</div>
+            <span class="connector">⊸</span>
+            <div class="link-pill"><span class="n">☾</span> Turno da noite</div>
+            <span class="connector">⊸</span>
+            <div class="link-pill"><span class="n">✓</span> Continuidade</div>
+          </div>
+        </div>
+        <div class="reveal">
+          <div style="background:#fff;border:1px solid var(--line);border-radius:20px;padding:26px;box-shadow:0 30px 60px -40px rgba(7,66,109,.5)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <b style="font-size:1.05rem">Passagem de plantão</b>
+              <span style="font-size:12px;color:#fff;background:var(--secondary-600);padding:4px 10px;border-radius:999px">Turno concluído</span>
+            </div>
+            <div style="display:grid;gap:10px">
+              <div style="display:flex;gap:10px;align-items:center;background:#f2f9f6;border:1px solid #d9efe6;border-radius:11px;padding:11px 13px">
+                <span style="color:var(--secondary-600)">✓</span><span style="font-size:.92rem">Sinais vitais aferidos e registrados</span>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;background:#f2f9f6;border:1px solid #d9efe6;border-radius:11px;padding:11px 13px">
+                <span style="color:var(--secondary-600)">✓</span><span style="font-size:.92rem">Medicação administrada no horário</span>
+              </div>
+              <div style="display:flex;gap:10px;align-items:center;background:#fff7ed;border:1px solid #ffe6c7;border-radius:11px;padding:11px 13px">
+                <span style="color:#c2760a">!</span><span style="font-size:.92rem">Atenção: SpO₂ mínima 92% às 03h</span>
+              </div>
+            </div>
+            <div style="margin-top:16px;height:8px;border-radius:99px;background:#eaf1f7;overflow:hidden">
+              <div style="height:100%;width:96%;background:linear-gradient(90deg,var(--primary),var(--secondary))"></div>
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin-top:8px">96% da rotina do turno concluída</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECURITY -->
+    <section class="block" id="seguranca">
+      <div class="wrap">
+        <p class="eyebrow">Dado de saúde é dado sensível</p>
+        <h2 class="h2">Segurança e privacidade no centro</h2>
+        <p class="sub">Porque prontuário exige responsabilidade — não só funcionalidade.</p>
+        <div class="features">
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+            <h3>Acesso por papel</h3>
+            <p>Técnico, enfermeiro, médico, família e admin — cada um vê e faz apenas o que deve.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></div>
+            <h3>Trilha de auditoria</h3>
+            <p>Quem criou, editou ou excluiu cada registro — com data e hora. Imutável.</p>
+          </div>
+          <div class="card reveal">
+            <div class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+            <h3>Conforme a LGPD</h3>
+            <p>Login obrigatório, sessão protegida e dados clínicos acessíveis só a quem é autorizado.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="block" id="comecar">
+      <div class="wrap">
+        <div class="cta reveal">
+          <div class="halo"></div>
+          <h2>Conecte o cuidado da sua casa</h2>
+          <p>Elo reúne a equipe, a rotina e o prontuário num só lugar — para cuidar melhor, plantão a plantão.</p>
+          <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+            <a href="#" data-download class="btn btn-light">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+              Baixar aplicativo
+            </a>
+            <a href="#recursos" class="btn btn-ghost">Ver recursos</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <a class="logo" href="#top" style="color:var(--ink)">
+        <svg class="mark" viewBox="0 0 40 40" fill="none">
+          <circle cx="15" cy="20" r="9.5" stroke="#0A6EBD" stroke-width="3.2"/>
+          <circle cx="25" cy="20" r="9.5" stroke="#12B886" stroke-width="3.2"/>
+        </svg>
+        <div><b>Elo</b><span>O elo do cuidado</span></div>
+      </a>
+      <span>© <span id="yr"></span> Elo · Prontuário de home care</span>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    document.getElementById('yr').textContent = new Date().getFullYear();
+
+    /* ===========================================================
+       CONFIGURE AQUI o link de download do aplicativo:
+       - Play Store / App Store, ou
+       - a URL onde o app web está hospedado.
+       Deixe '' para o botão apenas avisar que ainda não foi configurado.
+       =========================================================== */
+    const APP_DOWNLOAD_URL = '';
+    document.querySelectorAll('[data-download]').forEach(a=>{
+      if(APP_DOWNLOAD_URL){ a.href = APP_DOWNLOAD_URL; a.target = '_blank'; a.rel = 'noopener'; }
+      else { a.addEventListener('click', e=>{ e.preventDefault(); alert('Configure o link de download em landing/index.html (variável APP_DOWNLOAD_URL).'); }); }
+    });
+
+    /* ===========================================================
+       LINK DO APP (botão "Entrar"):
+       Meta = mesmo domínio da landing, via subdomínio (ex.: https://app.SEU-DOMINIO).
+       Enquanto o subdomínio não estiver configurado no Vercel, aponta para a URL atual.
+       Troque APENAS esta linha quando o subdomínio estiver pronto.
+       =========================================================== */
+    const APP_URL = 'https://prontuario.elohomecare.com.br';
+    document.querySelectorAll('[data-app]').forEach(a=>{ a.href = APP_URL; });
+
+    // Scroll reveal
+    const io = new IntersectionObserver((es)=>es.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }}),{threshold:.15});
+    document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+
+    // ---- 3D: interlocked rings (o "elo") ----
+    (function(){
+      if(!window.THREE) return;
+      const canvas = document.getElementById('hero3d');
+      const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+      camera.position.set(0, 0, 7.2);
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+      const key = new THREE.DirectionalLight(0xffffff, 1.15); key.position.set(4, 6, 6); scene.add(key);
+      const teal = new THREE.PointLight(0x12B886, 1.7, 60); teal.position.set(-5, 2, 4); scene.add(teal);
+      const blue = new THREE.PointLight(0x3385d1, 1.4, 60); blue.position.set(5, -2, 4); scene.add(blue);
+
+      const group = new THREE.Group();
+      function ring(color, rot, pos){
+        const geo = new THREE.TorusGeometry(1.15, 0.33, 40, 140);
+        const mat = new THREE.MeshStandardMaterial({ color, metalness:0.45, roughness:0.22, emissive:color, emissiveIntensity:0.07 });
+        const m = new THREE.Mesh(geo, mat);
+        m.rotation.set(rot[0], rot[1], rot[2]);
+        m.position.set(pos[0], pos[1], pos[2]);
+        return m;
+      }
+      // Two perpendicular, offset rings -> read as a link (elo)
+      const r1 = ring(0x0A6EBD, [Math.PI/2, 0, 0], [-0.78, 0, 0]);
+      const r2 = ring(0x12B886, [0, Math.PI/2, 0], [ 0.78, 0, 0]);
+      group.add(r1, r2);
+      scene.add(group);
+
+      // ambient particles
+      const pGeo = new THREE.BufferGeometry();
+      const N = 140, arr = new Float32Array(N*3);
+      for(let i=0;i<N;i++){ arr[i*3]=(Math.random()-.5)*14; arr[i*3+1]=(Math.random()-.5)*10; arr[i*3+2]=(Math.random()-.5)*8-2; }
+      pGeo.setAttribute('position', new THREE.BufferAttribute(arr,3));
+      const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({color:0x8ec6ff, size:0.045, transparent:true, opacity:.5}));
+      scene.add(particles);
+
+      function size(){
+        const w = canvas.clientWidth, h = canvas.clientHeight;
+        if(canvas.width!==w*renderer.getPixelRatio() || canvas.height!==h*renderer.getPixelRatio()){
+          renderer.setSize(w, h, false); camera.aspect = w/h; camera.updateProjectionMatrix();
+        }
+      }
+      let t=0;
+      function loop(){
+        requestAnimationFrame(loop);
+        t += 0.01;
+        group.rotation.y += 0.006;
+        group.rotation.x = Math.sin(t*0.7)*0.22;
+        group.position.y = Math.sin(t)*0.12;
+        r1.rotation.z += 0.004; r2.rotation.z -= 0.004;
+        particles.rotation.y += 0.0009;
+        size(); renderer.render(scene, camera);
+      }
+      loop();
+      window.addEventListener('resize', size);
+    })();
+  </script>
+</body>
+</html>

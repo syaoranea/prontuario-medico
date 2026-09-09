@@ -10,10 +10,8 @@ export const buscarUsuarioPorId = async () => {
 
     if (docSnap.exists()) {
       const dados = docSnap.data();
-      console.log("Dados do usuário:", dados);
       return dados;
     } else {
-      console.log("Usuário não encontrado.");
       return null;
     }
   } catch (erro) {
@@ -31,10 +29,8 @@ export const buscarInformacaoMedicas = async () => {
 
     if (docSnap.exists()) {
       const dados = docSnap.data();
-      console.log("Dados do Informacao Medicas:", dados);
       return dados;
     } else {
-      console.log("Informacao Medicas não encontrado.");
       return null;
     }
   } catch (erro) {

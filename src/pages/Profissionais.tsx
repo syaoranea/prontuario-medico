@@ -17,13 +17,19 @@ import {
 import { collection, getDocs, addDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Profissional } from '../interface/interface';
+import { useFeedback } from '../components/FeedbackProvider';
+import { useConfirm } from '../components/ConfirmProvider';
+import { useAuditoria } from '../config/auditoria';
 
 const Profissionais: React.FC = () => {
   const [profissionais, setProfissionais] = useState<Profissional[]>([]);
   const [filtro, setFiltro] = useState<string>('Todos');
   const [busca, setBusca] = useState<string>('');
   const [carregando, setCarregando] = useState(true);
-  
+  const { notificar } = useFeedback();
+  const { confirmar } = useConfirm();
+  const { registrar } = useAuditoria();
+
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -150,29 +156,37 @@ const Profissionais: React.FC = () => {
     try {
       if (idEditando) {
         await updateDoc(doc(db, 'profissionais', idEditando), novoProfissional);
+        registrar('editar', 'profissional', idEditando, novoProfissional.nome);
       } else {
-        await addDoc(collection(db, 'profissionais'), novoProfissional);
+        const ref = await addDoc(collection(db, 'profissionais'), novoProfissional);
+        registrar('criar', 'profissional', ref.id, novoProfissional.nome);
       }
       setIsModalOpen(false);
       buscarProfissionais();
     } catch (error) {
       console.error('Erro ao salvar profissional:', error);
-      alert('Erro ao salvar profissional. Verifique o console.');
+      notificar('erro', 'Erro ao salvar profissional. Tente novamente.');
     } finally {
       setSalvando(false);
     }
   };
 
   const handleDelete = async (id: string, nome: string) => {
-    if (window.confirm(`Tem certeza que deseja excluir o profissional ${nome}?`)) {
-      try {
-        await deleteDoc(doc(db, 'profissionais', id));
-        buscarProfissionais();
-        setMenuAberto(null);
-      } catch (error) {
-        console.error('Erro ao excluir profissional:', error);
-        alert('Erro ao excluir o profissional.');
-      }
+    const ok = await confirmar({
+      titulo: 'Excluir profissional',
+      mensagem: `Tem certeza que deseja excluir o profissional ${nome}?`,
+      textoConfirmar: 'Excluir',
+      destrutivo: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteDoc(doc(db, 'profissionais', id));
+      registrar('excluir', 'profissional', id, nome);
+      buscarProfissionais();
+      setMenuAberto(null);
+    } catch (error) {
+      console.error('Erro ao excluir profissional:', error);
+      notificar('erro', 'Erro ao excluir o profissional.');
     }
   };
 

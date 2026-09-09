@@ -6,6 +6,9 @@ import { getStorage, uploadBytesResumable } from 'firebase/storage';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../config/firebase'; // ajuste o caminho
 import { Dialog, Transition } from '@headlessui/react';
+import { useFeedback } from '../components/FeedbackProvider';
+import { useAuditoria } from '../config/auditoria';
+import { ordinalData, formatarDataBR, hojeISO, paraISO } from '../utils/datas';
 
 
 interface RegistroMedico {
@@ -47,6 +50,8 @@ const HistoricoMedico: React.FC = () => {
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [progresso, setProgresso] = useState(0);
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const { notificar } = useFeedback();
+  const { registrar } = useAuditoria();
 
   const closeModal = () => {
     setIsOpen(false);
@@ -60,7 +65,7 @@ const HistoricoMedico: React.FC = () => {
   const openNewModal = () => {
     setNovoRegistro({
       tipo: 'consulta',
-      data: new Date().toISOString().split('T')[0],
+      data: hojeISO(),
       titulo: '',
       descricao: '',
       medico: '',
@@ -86,13 +91,8 @@ const HistoricoMedico: React.FC = () => {
           id: doc.id,
           ...doc.data(),
         }));
-        console.log('Registros encontrados:', dados);
         // Ordenar do mais novo para o mais velho (assumindo formato ISO ou Timestamp convertido)
-      const dadosOrdenados = dados.sort((a, b) => {
-        const dataA = new Date(a.data).getTime();
-        const dataB = new Date(b.data).getTime();
-        return dataB - dataA;
-      });
+      const dadosOrdenados = dados.sort((a, b) => ordinalData(b.data) - ordinalData(a.data));
         setRegistros(dadosOrdenados as RegistroMedico[]);
       } catch (erro) {
         console.error('Erro ao buscar registros médicos:', erro);
@@ -117,7 +117,8 @@ const HistoricoMedico: React.FC = () => {
   
     try {
       await deleteDoc(doc(db, 'historicoMedico', registroSelecionado.id));
-  
+      registrar('excluir', 'historico', registroSelecionado.id, registroSelecionado.titulo);
+
       setRegistros((prev) => prev.filter((r) => r.id !== registroSelecionado.id));
       setIsConfirmOpen(false);
       closeModal();
@@ -157,7 +158,7 @@ const HistoricoMedico: React.FC = () => {
             nome: arquivo.name,
             tipo: arquivo.type.split("/")[1]?.toUpperCase() || "PDF",
             categoria: "Exames", // Pode ser dinâmico
-            data: new Date().toLocaleDateString("pt-BR"),
+            data: hojeISO(),
             tamanho: `${(arquivo.size / 1024 / 1024).toFixed(1)} MB`,
             origem: "Usuário", // Pode ser substituído por input
             descricao: "", // Opcional
@@ -167,8 +168,6 @@ const HistoricoMedico: React.FC = () => {
   
           // Salva no Firestore
           await addDoc(collection(db, "documentos"), documentoData);
-  
-          console.log("Documento salvo com sucesso!");
         } catch (err) {
           console.error("Erro ao salvar no Firestore:", err);
         }
@@ -230,7 +229,7 @@ const HistoricoMedico: React.FC = () => {
       !novoRegistro.especialidade ||
       !novoRegistro.instituicao
     ) {
-      alert('Preencha todos os campos obrigatórios.');
+      notificar('erro', 'Preencha todos os campos obrigatórios.');
       return;
     }
   
@@ -239,6 +238,7 @@ const HistoricoMedico: React.FC = () => {
         ...novoRegistro,
         documentos: [],
       });
+      registrar('criar', 'historico', docRef.id, novoRegistro.titulo);
 
       handleUpload();
   
@@ -270,7 +270,7 @@ const HistoricoMedico: React.FC = () => {
       const { id, ...dadosParaSalvar } = registroSelecionado;
   
       await updateDoc(registroRef, dadosParaSalvar);
-      console.log('Registro atualizado com sucesso!');
+      registrar('editar', 'historico', registroSelecionado.id, registroSelecionado.titulo);
       handleUpload();
       // Atualiza localmente
       setRegistros((prev) =>
@@ -389,7 +389,7 @@ const HistoricoMedico: React.FC = () => {
                         <h3 className="text-lg font-semibold text-gray-800">{registro.titulo}</h3>
                         <span className="px-2 py-0.5 text-xs bg-gray-100 text-gray-700 rounded-full flex items-center">
                           <Calendar size={12} className="mr-1" />
-                          {registro.data}
+                          {formatarDataBR(registro.data)}
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 mt-2">{registro.descricao}</p>
@@ -539,7 +539,7 @@ const HistoricoMedico: React.FC = () => {
                         <input
                           type="date"
                           className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all outline-none text-gray-700 font-medium"
-                          value={isEditing ? registroSelecionado?.data : novoRegistro.data}
+                          value={isEditing ? paraISO(registroSelecionado?.data) : novoRegistro.data}
                           onChange={(e) => {
                             const val = e.target.value;
                             isEditing 
