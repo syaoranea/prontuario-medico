@@ -122,6 +122,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Lookup público mínimo p/ login por celular: celular(sem DDD) -> { email }.
+    // Leitura pública (necessária ANTES de autenticar); escrita só admin.
+    match /loginTelefone/{celular} {
+      allow read: if true;
+      allow write: if ehAdmin();
+    }
+
     // ── Bloqueio padrão para qualquer caminho não previsto acima ─────────────
     match /{document=**} {
       allow read, write: if false;

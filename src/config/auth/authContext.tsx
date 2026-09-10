@@ -73,7 +73,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsub();
   }, []);
 
-  const login = async (email: string, senha: string) => {
+  // Aceita e-mail OU celular (sem DDD). Se for celular, resolve para o e-mail
+  // pela coleção pública loginTelefone/{celular} = { email } antes de autenticar.
+  const login = async (identificador: string, senha: string) => {
+    const id = identificador.trim();
+    let email = id;
+    if (/^\d{6,}$/.test(id)) {
+      const snap = await getDoc(doc(db, 'loginTelefone', id));
+      if (!snap.exists()) {
+        const err: any = new Error('Celular não cadastrado.');
+        err.code = 'app/celular-nao-encontrado';
+        throw err;
+      }
+      email = (snap.data() as { email?: string }).email ?? '';
+      if (!email) {
+        const err: any = new Error('Celular sem e-mail vinculado.');
+        err.code = 'app/celular-sem-email';
+        throw err;
+      }
+    }
     await signInWithEmailAndPassword(auth, email.trim(), senha);
   };
 

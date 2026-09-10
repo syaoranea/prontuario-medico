@@ -7,8 +7,10 @@ const MENSAGENS_ERRO: Record<string, string> = {
   'auth/user-disabled': 'Este usuário está desativado.',
   'auth/user-not-found': 'E-mail ou senha incorretos.',
   'auth/wrong-password': 'E-mail ou senha incorretos.',
-  'auth/invalid-credential': 'E-mail ou senha incorretos.',
+  'auth/invalid-credential': 'E-mail/celular ou senha incorretos.',
   'auth/too-many-requests': 'Muitas tentativas. Tente novamente em alguns minutos.',
+  'app/celular-nao-encontrado': 'Celular não cadastrado. Use seu e-mail ou fale com o administrador.',
+  'app/celular-sem-email': 'Este celular não tem e-mail vinculado. Entre com o e-mail.',
 };
 
 const Login: React.FC = () => {
@@ -56,16 +58,16 @@ const Login: React.FC = () => {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">E-mail</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">E-mail ou celular</label>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input
-                type="email"
+                type="text"
                 required
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com"
+                placeholder="seu@email.com ou celular"
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition-all"
               />
             </div>

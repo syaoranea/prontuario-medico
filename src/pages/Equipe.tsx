@@ -15,6 +15,7 @@ interface Membro {
   papel: Papel;
   ativo: boolean;
   email?: string;
+  celular?: string; // sem DDD
 }
 
 const PAPEIS: Papel[] = ['tecnico', 'enfermeiro', 'medico', 'familia', 'admin'];
@@ -56,6 +57,8 @@ const Equipe: React.FC = () => {
   const [modoNovo, setModoNovo] = useState(true); // true = cria Auth; false = vincula UID existente
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
+  const [celular, setCelular] = useState('');
+  const [celularOriginal, setCelularOriginal] = useState('');
   const [uidExistente, setUidExistente] = useState('');
 
   const mostrar = (tipo: 'ok' | 'erro', msg: string) => {
@@ -89,6 +92,8 @@ const Equipe: React.FC = () => {
     setModoNovo(true);
     setEmail('');
     setSenha('');
+    setCelular('');
+    setCelularOriginal('');
     setUidExistente('');
   };
 
@@ -102,12 +107,28 @@ const Equipe: React.FC = () => {
     setNome(m.nome);
     setPapel(m.papel);
     setEmail(m.email || '');
+    setCelular(m.celular || '');
+    setCelularOriginal(m.celular || '');
     setModalAberto(true);
   };
 
   const fechar = () => {
     setModalAberto(false);
     resetForm();
+  };
+
+  // Mantém a coleção pública loginTelefone/{celular} = { email } (best-effort).
+  const sincronizarLoginTelefone = async (celularNovo: string, celularAntigo: string, email: string) => {
+    try {
+      if (celularAntigo && celularAntigo !== celularNovo) {
+        await deleteDoc(doc(db, 'loginTelefone', celularAntigo));
+      }
+      if (celularNovo && email) {
+        await setDoc(doc(db, 'loginTelefone', celularNovo), { email });
+      }
+    } catch (e) {
+      console.error('Erro ao sincronizar login por telefone:', e);
+    }
   };
 
   const salvar = async () => {
@@ -119,8 +140,10 @@ const Equipe: React.FC = () => {
     try {
       // EDIÇÃO: só altera campos do Firestore (nome/papel). E-mail/senha do Auth
       // de terceiros exigem Admin SDK no servidor, então não são editáveis aqui.
+      const celularLimpo = celular.replace(/\D/g, ''); // só dígitos, sem DDD
       if (editUid) {
-        await updateDoc(doc(db, 'membrosEquipe', editUid), { nome: nome.trim(), papel });
+        await updateDoc(doc(db, 'membrosEquipe', editUid), { nome: nome.trim(), papel, celular: celularLimpo });
+        await sincronizarLoginTelefone(celularLimpo, celularOriginal, email.trim());
         mostrar('ok', 'Membro atualizado.');
         fechar();
         carregar();
@@ -150,7 +173,9 @@ const Equipe: React.FC = () => {
         papel,
         ativo: true,
         ...(email.trim() ? { email: email.trim() } : {}),
+        ...(celularLimpo ? { celular: celularLimpo } : {}),
       });
+      await sincronizarLoginTelefone(celularLimpo, '', email.trim());
 
       mostrar('ok', 'Membro cadastrado com sucesso.');
       fechar();
@@ -200,6 +225,7 @@ const Equipe: React.FC = () => {
     if (!ok) return;
     try {
       await deleteDoc(doc(db, 'membrosEquipe', m.uid));
+      if (m.celular) await deleteDoc(doc(db, 'loginTelefone', m.celular)).catch(() => {});
       mostrar('ok', 'Acesso removido.');
       carregar();
     } catch (e) {
@@ -279,7 +305,10 @@ const Equipe: React.FC = () => {
                         {PAPEL_LABEL[m.papel]}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{m.email || '—'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      <div>{m.email || '—'}</div>
+                      {m.celular && <div className="text-xs text-gray-400">📱 {m.celular}</div>}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {m.ativo ? (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
@@ -343,6 +372,17 @@ const Equipe: React.FC = () => {
                 <p className="text-xs text-gray-400 mt-1">
                   Família = somente leitura. Técnico/Enfermeiro/Médico/Admin editam dados clínicos. Admin gerencia a equipe.
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Celular (sem DDD)</label>
+                <input
+                  type="tel" inputMode="numeric" maxLength={9}
+                  value={celular}
+                  onChange={(e) => setCelular(e.target.value.replace(/\D/g, ''))}
+                  placeholder="Ex: 957080582"
+                  className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                />
               </div>
 
               {!editUid && (
