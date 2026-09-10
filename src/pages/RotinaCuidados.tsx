@@ -1204,7 +1204,7 @@ const RotinaCuidados: React.FC = () => {
             {[
               { id: 'ranking', label: 'Ranking', icon: Trophy },
               { id: 'avaliacao', label: 'Avaliação por tarefa', icon: Star },
-            ].map(st => (
+            ].filter(st => st.id !== 'avaliacao' || temPapel(['admin'])).map(st => (
               <button
                 key={st.id}
                 onClick={() => setAbaPlacar(st.id as typeof abaPlacar)}
@@ -1430,7 +1430,7 @@ const RotinaCuidados: React.FC = () => {
           </div>
           )}
 
-          {abaPlacar === 'avaliacao' && (
+          {abaPlacar === 'avaliacao' && temPapel(['admin']) && (
             <div>
               <div className="bg-white rounded-xl border border-gray-100 p-4 mb-4">
                 <p className="text-sm text-gray-600">
