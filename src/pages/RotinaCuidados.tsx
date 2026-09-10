@@ -847,7 +847,7 @@ const RotinaCuidados: React.FC = () => {
           { id: 'tecnicos', label: 'Técnicos', icon: Stethoscope },
           { id: 'gamificacao', label: 'Placar', icon: Trophy },
           { id: 'historico', label: 'Histórico', icon: History },
-        ].map(tab => (
+        ].filter(tab => !['checklist', 'tecnicos'].includes(tab.id) || temPapel(['admin'])).map(tab => (
           <button
             key={tab.id}
             onClick={() => setAbaAtiva(tab.id as typeof abaAtiva)}
@@ -940,7 +940,7 @@ const RotinaCuidados: React.FC = () => {
       )}
 
       {/* ── ABA: CHECKLIST ──────────────────────────────────────────────── */}
-      {abaAtiva === 'checklist' && (
+      {abaAtiva === 'checklist' && temPapel(['admin']) && (
         <div>
           {/* Date + shift + aux name */}
           <div className="bg-white rounded-xl border border-gray-100 p-4 mb-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -1111,7 +1111,7 @@ const RotinaCuidados: React.FC = () => {
       )}
 
       {/* ── ABA: TÉCNICOS ───────────────────────────────────────────────── */}
-      {abaAtiva === 'tecnicos' && (
+      {abaAtiva === 'tecnicos' && temPapel(['admin']) && (
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-500">Técnicos que assumem os plantões. Aparecem como opção ao preencher o checklist.</p>
