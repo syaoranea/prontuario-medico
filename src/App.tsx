@@ -12,6 +12,8 @@ import Documentos from './pages/Documentos';
 import Configuracoes from './pages/Configuracoes';
 import Profissionais from './pages/Profissionais';
 import RotinaCuidados from './pages/RotinaCuidados';
+import Escala from './pages/Escala';
+import EncerrarPlantao from './pages/EncerrarPlantao';
 import Equipe from './pages/Equipe';
 import Auditoria from './pages/Auditoria';
 import Login from './pages/Login';
@@ -107,6 +109,15 @@ const AppGate: React.FC = () => {
             }
           />
           <Route path="/rotina" element={<RotinaCuidados />} />
+          <Route path="/escala" element={<Escala />} />
+          <Route
+            path="/encerrar-plantao"
+            element={
+              <RequireRole papeis={['tecnico']}>
+                <EncerrarPlantao />
+              </RequireRole>
+            }
+          />
           <Route
             path="/equipe"
             element={

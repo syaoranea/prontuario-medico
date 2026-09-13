@@ -18,7 +18,9 @@ export type EntidadeAuditoria =
   | 'tecnico'
   | 'ponto-extra'
   | 'avaliacao-tarefa'
-  | 'competicao';
+  | 'competicao'
+  | 'escala'
+  | 'plantao';
 
 export const ACAO_LABEL: Record<AcaoAuditoria, string> = {
   criar: 'Criou',
@@ -42,6 +44,8 @@ export const ENTIDADE_LABEL: Record<EntidadeAuditoria, string> = {
   'ponto-extra': 'Pontos extras',
   'avaliacao-tarefa': 'Avaliação por tarefa',
   competicao: 'Competição',
+  escala: 'Escala / folga',
+  plantao: 'Encerramento de plantão',
 };
 
 /**

@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Home, User, FileText, Pill, Calendar, LineChart,
-  FolderClosed, Settings, Menu, X, Users, Heart, LogOut, ShieldCheck, History
+  FolderClosed, Settings, Menu, X, Users, Heart, LogOut, ShieldCheck, History, Camera
 } from 'lucide-react';
 import { useState } from 'react';
 import { Papel, PAPEL_LABEL, useAuth } from '../config/auth/authContext';
@@ -29,7 +29,9 @@ const Sidebar: React.FC = () => {
     { path: '/documentos', icon: <FolderClosed size={20} />, label: 'Documentos' },
     { path: '/profissionais', icon: <Users size={20} />, label: 'Profissionais', papeis: GESTAO },
     { path: '/rotina', icon: <Heart size={20} />, label: 'Rotina Home Care' },
-    { path: '/equipe', icon: <ShieldCheck size={20} />, label: 'Equipe e Acessos', papeis: ['admin'] },
+    { path: '/escala', icon: <Calendar size={20} />, label: 'Escala' },
+    { path: '/encerrar-plantao', icon: <Camera size={20} />, label: 'Encerrar Plantão', papeis: ['tecnico'] as Papel[] },
+    { path: '/equipe', icon: <ShieldCheck size={20} />, label: 'Equipe e Acessos', papeis: ['admin'] as Papel[] },
     { path: '/auditoria', icon: <History size={20} />, label: 'Auditoria', papeis: GESTAO },
     { path: '/configuracoes', icon: <Settings size={20} />, label: 'Configurações', papeis: GESTAO },
   ].filter((item) => !item.papeis || temPapel(item.papeis));

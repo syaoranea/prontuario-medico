@@ -3,7 +3,7 @@ import {
   ClipboardList, CheckSquare, History, Plus, Edit2, Trash2, Save,
   Sun, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
   ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText,
-  Phone, UserPlus, BadgeCheck, Trophy, Crown, Star, Zap, Gift, Sparkles, Flame, Flag
+  Phone, UserPlus, BadgeCheck, Trophy, Crown, Star, Zap, Gift, Sparkles, Flame, Flag, GripVertical
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -236,6 +236,10 @@ const RotinaCuidados: React.FC = () => {
   const [obsGeral, setObsGeral] = useState('');
   const [execucaoAtualId, setExecucaoAtualId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // Drag & drop de reordenação do checklist
+  const [dragItemId, setDragItemId] = useState<string | null>(null);
+  const [dragSecao, setDragSecao] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [checklistSalvo, setChecklistSalvo] = useState(false);
 
   // History
@@ -724,6 +728,37 @@ const RotinaCuidados: React.FC = () => {
     setChecklistSalvo(false);
   };
 
+  // Reordena um item dentro da seção (arrastar e soltar) e persiste o campo `ordem`.
+  const reordenarItem = async (secao: string, fromId: string, toId: string) => {
+    if (fromId === toId) return;
+    const secoes = itensPorTurnoSecao(turnoChecklist);
+    const lista = [...(secoes[secao] || [])];
+    const fromIdx = lista.findIndex(i => i.id === fromId);
+    const toIdx = lista.findIndex(i => i.id === toId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const [movido] = lista.splice(fromIdx, 1);
+    lista.splice(toIdx, 0, movido);
+    secoes[secao] = lista;
+
+    // Reconstrói a lista plana do turno na ordem das seções e reatribui `ordem`.
+    const flat = Object.values(secoes).flat();
+    const novaOrdem = new Map(flat.map((it, idx) => [it.id, idx + 1]));
+
+    // Atualiza a tela imediatamente (otimista).
+    setItens(prev => sortItens(prev.map(it => (novaOrdem.has(it.id) ? { ...it, ordem: novaOrdem.get(it.id)! } : it))));
+
+    try {
+      const batch = writeBatch(db);
+      flat.forEach((it, idx) => batch.update(doc(db, 'rotina-items', it.id), { ordem: idx + 1 }));
+      await batch.commit();
+      registrar('editar', 'rotina-item', movido.id, `Reordenado em "${secao}"`);
+    } catch (err) {
+      console.error('Erro ao reordenar:', err);
+      mostrarFeedback('erro', 'Erro ao salvar a nova ordem.');
+      carregarItens();
+    }
+  };
+
   const salvarChecklist = async () => {
     if (!auxiliarNome.trim()) { mostrarFeedback('erro', 'Informe o nome do técnico antes de salvar.'); return; }
     setSalvando(true);
@@ -1051,8 +1086,27 @@ const RotinaCuidados: React.FC = () => {
                       const check = checkMap[item.id] ?? { concluido: false, observacao: '' };
                       const resp = RESPONSAVEL_CONFIG[item.responsavel];
                       return (
-                        <div key={item.id} className={`px-4 py-3 transition-colors ${check.concluido ? 'bg-green-50/50' : ''}`}>
+                        <div
+                          key={item.id}
+                          onDragOver={(e) => { if (dragItemId && dragSecao === secao) { e.preventDefault(); setDragOverId(item.id); } }}
+                          onDragLeave={() => setDragOverId(prev => (prev === item.id ? null : prev))}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (dragItemId && dragSecao === secao) reordenarItem(secao, dragItemId, item.id);
+                            setDragItemId(null); setDragSecao(null); setDragOverId(null);
+                          }}
+                          className={`px-4 py-3 transition-colors ${check.concluido ? 'bg-green-50/50' : ''} ${dragOverId === item.id ? 'ring-2 ring-primary-300 ring-inset rounded-lg' : ''} ${dragItemId === item.id ? 'opacity-40' : ''}`}
+                        >
                           <div className="flex items-start gap-3">
+                            <span
+                              draggable
+                              onDragStart={() => { setDragItemId(item.id); setDragSecao(secao); }}
+                              onDragEnd={() => { setDragItemId(null); setDragSecao(null); setDragOverId(null); }}
+                              className="mt-0.5 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 shrink-0"
+                              title="Arraste para reordenar"
+                            >
+                              <GripVertical size={16} />
+                            </span>
                             <button
                               onClick={() => toggleItem(item.id)}
                               className={`mt-0.5 w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${check.concluido ? 'bg-green-500 border-green-500' : 'border-gray-300 hover:border-primary-400'}`}

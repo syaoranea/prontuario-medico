@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, FileText, Pill, Calendar, ArrowRight } from 'lucide-react';
+import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee } from 'lucide-react';
 import { Agendamento } from '../../interface/interface';
 import { formatarDataBR } from '../../utils/datas';
 
+export interface FolgaAlerta {
+  id: string;
+  tecnicoNome: string;
+  data: string;
+  turno?: 'diurno' | 'noturno';
+}
+
 interface AlertaWidgetProps {
   alertas: Agendamento[];
+  folgas?: FolgaAlerta[];
+  onFazerCobertura?: (folga: FolgaAlerta) => void;
 }
 
 interface Alerta {
@@ -48,8 +57,10 @@ const alertas: Alerta[] = [
 
 const AlertasWidget: React.FC<AlertaWidgetProps> = ({
   alertas,
+  folgas,
+  onFazerCobertura,
   }) => {
-  
+
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
       <div className="flex items-center justify-between mb-6">
@@ -59,7 +70,32 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
         </div>
         <button className="text-sm text-primary-600 hover:text-primary-700">Ver todos</button>
       </div>
-      
+
+      {/* Folgas solicitadas aguardando cobertura */}
+      {folgas && folgas.length > 0 && (
+        <div className="space-y-3 mb-3">
+          {folgas.map((f) => (
+            <div key={f.id} className="p-4 border rounded-lg bg-amber-50 border-amber-100 flex items-start space-x-3">
+              <div className="p-2 rounded-full bg-amber-100 text-amber-600 shrink-0">
+                <Coffee size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">{f.tecnicoNome} solicitou folga</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatarDataBR(f.data)}{f.turno ? ` · ${f.turno === 'noturno' ? 'Noturno' : 'Diurno'}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => onFazerCobertura?.(f)}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+              >
+                Fazer cobertura
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-3">
   {/*       {alertas.map((alerta) => (
           <div 
@@ -96,7 +132,7 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
         ))} */}
 
         {(!alertas || alertas.length === 0) ? (
-          <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
+          (!folgas || folgas.length === 0) && <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
         ) : (
           alertas.map((alerta) => (
             <div 

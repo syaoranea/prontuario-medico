@@ -8,6 +8,7 @@ import { storage } from '../config/firebase'; // ajuste o caminho
 import { Dialog, Transition } from '@headlessui/react';
 import { useFeedback } from '../components/FeedbackProvider';
 import { useAuditoria } from '../config/auditoria';
+import { useAuth } from '../config/auth/authContext';
 import { ordinalData, formatarDataBR, hojeISO, paraISO } from '../utils/datas';
 
 
@@ -52,6 +53,8 @@ const HistoricoMedico: React.FC = () => {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const { notificar } = useFeedback();
   const { registrar } = useAuditoria();
+  const { temPapel } = useAuth();
+  const admin = temPapel(['admin']);
 
   const closeModal = () => {
     setIsOpen(false);
@@ -313,12 +316,14 @@ const HistoricoMedico: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <h1 className="text-2xl font-bold text-gray-800">Histórico Médico</h1>
         
-        <button
-           onClick={openNewModal}
-          className="mt-4 md:mt-0 inline-flex items-center justify-center px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all shadow-lg shadow-primary-200 font-semibold">
-          <PlusCircle size={20} className="mr-2" />
-          Novo Registro
-        </button>
+        {admin && (
+          <button
+             onClick={openNewModal}
+            className="mt-4 md:mt-0 inline-flex items-center justify-center px-6 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-all shadow-lg shadow-primary-200 font-semibold">
+            <PlusCircle size={20} className="mr-2" />
+            Novo Registro
+          </button>
+        )}
       </div>
       
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -397,12 +402,14 @@ const HistoricoMedico: React.FC = () => {
                   </div>
 
                   <div className="text-right mt-2 md:mt-0">
-                    <button
-                      onClick={() => abrirModal(registro)}
-                      className="mt-4 inline-flex items-center px-4 py-2 text-primary-600 font-semibold hover:bg-primary-50 rounded-lg transition-colors border border-primary-100"
-                    >
-                      Ver detalhes
-                    </button>
+                    {admin && (
+                      <button
+                        onClick={() => abrirModal(registro)}
+                        className="mt-4 inline-flex items-center px-4 py-2 text-primary-600 font-semibold hover:bg-primary-50 rounded-lg transition-colors border border-primary-100"
+                      >
+                        Ver detalhes
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -707,7 +714,7 @@ const HistoricoMedico: React.FC = () => {
                   {/* Modal Footer */}
                   <div className="p-6 bg-gray-50 md:flex items-center justify-between gap-4 border-t border-gray-100">
                     <div className="mb-4 md:mb-0">
-                      {isEditing && (
+                      {isEditing && admin && (
                         <button
                           onClick={excluirRegistro}
                           className="flex items-center gap-2 px-4 py-2.5 text-red-600 hover:bg-red-50 rounded-xl transition-all font-bold text-sm"
@@ -723,12 +730,14 @@ const HistoricoMedico: React.FC = () => {
                       >
                         Cancelar
                       </button>
+                      {admin && (
                       <button
                         onClick={isEditing ? salvarAlteracoes : salvarNovoRegistro}
                         className="w-full sm:w-auto flex items-center justify-center gap-2 px-8 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-lg shadow-primary-200 transition-all font-bold active:scale-95"
                       >
                         <Save className="w-4 h-4" /> {isEditing ? 'Salvar Alterações' : 'Salvar Registro'}
                       </button>
+                      )}
                     </div>
                   </div>
                 </Dialog.Panel>

@@ -112,6 +112,16 @@ service cloud.firestore {
       allow read: if membroAtivo();
       allow write: if ehAdmin();
     }
+    // Escala de plantão (par/ímpar por técnico): todos leem; só admin cadastra.
+    match /escala/{doc} {
+      allow read: if membroAtivo();
+      allow write: if ehAdmin();
+    }
+    // Folgas solicitadas: qualquer membro lê e solicita/cancela.
+    match /folgas/{doc} {
+      allow read: if membroAtivo();
+      allow write: if membroAtivo();
+    }
 
     // ── Trilha de auditoria ─────────────────────────────────────────────────
     // Append-only e imutável: qualquer membro da equipe clínica REGISTRA ações

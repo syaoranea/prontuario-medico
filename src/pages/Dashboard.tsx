@@ -3,10 +3,11 @@ import { CalendarCheck, Heart, TrendingUp, ClipboardList} from 'lucide-react';
 import MetricasWidget from '../components/widgets/MetricasWidget';
 import ProximosAgendamentosWidget from '../components/widgets/ProximosAgendamentosWidget';
 import MedicamentosWidget from '../components/widgets/MedicamentosWidget';
-import AlertasWidget from '../components/widgets/AlertasWidget';
+import AlertasWidget, { FolgaAlerta } from '../components/widgets/AlertasWidget';
+import { useNavigate } from 'react-router-dom';
 import { useUsuario } from '../config/bd/userContext';
 import { useFeedback } from '../components/FeedbackProvider';
-import { ordinalData, formatarDataExtenso, dataFimVigente, faltaMenosDeUmMes } from '../utils/datas';
+import { ordinalData, formatarDataExtenso, dataFimVigente, faltaMenosDeUmMes, hojeISO } from '../utils/datas';
 import { collection, query, where, orderBy, getDocs, Timestamp, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Agendamento, Medicamento, Metrica, MetricaData } from '../interface/interface';
@@ -44,12 +45,15 @@ const Dashboard: React.FC = () => {
   const [novaHora, setNovaHora] = useState('');
   const [pendentes, setPendentes] = useState<Agendamento[]>([]);
   const [totalPendentes, setTotalPendentes] = useState(0);
+  const [folgasCobertura, setFolgasCobertura] = useState<FolgaAlerta[]>([]);
   const { notificar } = useFeedback();
+  const navigate = useNavigate();
 
   useEffect(() => {
     buscarAgendamentos();
     const unsubscribeMetricas = buscarMetricas();
     carregarMedicamentos();
+    buscarFolgasCobertura();
     const carregar = async () => {
       const { total, pendentes } = await buscarPendentes();
       setTotalPendentes(total);
@@ -119,6 +123,20 @@ const Dashboard: React.FC = () => {
       setMedicamentos(filtrados);
     } catch (error) {
       console.error('Erro ao buscar medicamentos:', error);
+    }
+  };
+
+  const buscarFolgasCobertura = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'folgas'));
+      const hojeStr = hojeISO();
+      const lista: FolgaAlerta[] = snapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as any) }))
+        .filter((f) => !f.cobertoPor && typeof f.data === 'string' && f.data >= hojeStr)
+        .map((f) => ({ id: f.id, tecnicoNome: f.tecnicoNome, data: f.data, turno: f.turno }));
+      setFolgasCobertura(lista);
+    } catch (error) {
+      console.error('Erro ao buscar folgas:', error);
     }
   };
 
@@ -442,8 +460,11 @@ const salvarReagendamento = async () => {
         <MedicamentosWidget 
           medicamentos={medicamentos}
         />
-        <AlertasWidget  
-        alertas={pendentes}/>
+        <AlertasWidget
+          alertas={pendentes}
+          folgas={folgasCobertura}
+          onFazerCobertura={() => navigate('/escala')}
+        />
       </div>
     </div>
 
