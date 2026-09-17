@@ -328,7 +328,7 @@
        - a URL onde o app web está hospedado.
        Deixe '' para o botão apenas avisar que ainda não foi configurado.
        =========================================================== */
-    const APP_DOWNLOAD_URL = '';
+    const APP_DOWNLOAD_URL = 'https://download-prontuario.s3.us-east-1.amazonaws.com/EloHomeCare-1.1.0-interno.apk';
     document.querySelectorAll('[data-download]').forEach(a=>{
       if(APP_DOWNLOAD_URL){ a.href = APP_DOWNLOAD_URL; a.target = '_blank'; a.rel = 'noopener'; }
       else { a.addEventListener('click', e=>{ e.preventDefault(); alert('Configure o link de download em landing/index.html (variável APP_DOWNLOAD_URL).'); }); }
