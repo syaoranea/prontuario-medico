@@ -43,8 +43,23 @@ export default {
           'sans-serif',
         ],
       },
+      keyframes: {
+        // Confete caindo no card de parabéns do plantão 100%.
+        confete: {
+          '0%': { transform: 'translateY(-20%) rotate(0deg)', opacity: '0' },
+          '10%': { opacity: '1' },
+          '100%': { transform: 'translateY(420%) rotate(540deg)', opacity: '0' },
+        },
+        // Brilho pulsante do troféu.
+        brilho: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.85' },
+          '50%': { transform: 'scale(1.12)', opacity: '1' },
+        },
+      },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        confete: 'confete 2.6s linear infinite',
+        brilho: 'brilho 1.8s ease-in-out infinite',
       },
     },
   },

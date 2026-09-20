@@ -3,14 +3,17 @@ import { CalendarCheck, Heart, TrendingUp, ClipboardList} from 'lucide-react';
 import MetricasWidget from '../components/widgets/MetricasWidget';
 import ProximosAgendamentosWidget from '../components/widgets/ProximosAgendamentosWidget';
 import MedicamentosWidget from '../components/widgets/MedicamentosWidget';
-import AlertasWidget, { FolgaAlerta } from '../components/widgets/AlertasWidget';
+import AlertasWidget, { FolgaAlerta, ObservacaoAlerta } from '../components/widgets/AlertasWidget';
+import ParabensWidget, { ParabensPlantao } from '../components/widgets/ParabensWidget';
 import { useNavigate } from 'react-router-dom';
 import { useUsuario } from '../config/bd/userContext';
 import { useFeedback } from '../components/FeedbackProvider';
-import { ordinalData, formatarDataExtenso, dataFimVigente, faltaMenosDeUmMes, hojeISO } from '../utils/datas';
+import { useAuth } from '../config/auth/authContext';
+import { ordinalData, formatarDataExtenso, dataFimVigente, faltaMenosDeUmMes, hojeISO, paraISO } from '../utils/datas';
+import { normalizarNome } from '../utils/texto';
 import { collection, query, where, orderBy, getDocs, Timestamp, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { Agendamento, Medicamento, Metrica, MetricaData } from '../interface/interface';
+import { Agendamento, Medicamento, Metrica, MetricaData, RotinaExecucao } from '../interface/interface';
 
 export const reagendarAgendamento = async (
   agendamentoId: string,
@@ -46,7 +49,10 @@ const Dashboard: React.FC = () => {
   const [pendentes, setPendentes] = useState<Agendamento[]>([]);
   const [totalPendentes, setTotalPendentes] = useState(0);
   const [folgasCobertura, setFolgasCobertura] = useState<FolgaAlerta[]>([]);
+  const [observacoesPlantao, setObservacoesPlantao] = useState<ObservacaoAlerta[]>([]);
+  const [parabensPlantao, setParabensPlantao] = useState<ParabensPlantao[]>([]);
   const { notificar } = useFeedback();
+  const { perfil, temPapel } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -54,6 +60,8 @@ const Dashboard: React.FC = () => {
     const unsubscribeMetricas = buscarMetricas();
     carregarMedicamentos();
     buscarFolgasCobertura();
+    buscarObservacoesPlantao();
+    buscarParabensPlantao();
     const carregar = async () => {
       const { total, pendentes } = await buscarPendentes();
       setTotalPendentes(total);
@@ -137,6 +145,92 @@ const Dashboard: React.FC = () => {
       setFolgasCobertura(lista);
     } catch (error) {
       console.error('Erro ao buscar folgas:', error);
+    }
+  };
+
+  // Plantões recentes em que a técnica deixou observação — geral ou em algum
+  // item do checklist. Vira card em "Alertas e Lembretes", nominal à técnica.
+  // A técnica vê só as próprias; gestão e família veem as de todas.
+  const buscarObservacoesPlantao = async () => {
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, 'rotina-execucoes'), orderBy('data', 'desc'), limit(30))
+      );
+
+      // Janela de 7 dias: alerta antigo vira ruído, o histórico completo fica na
+      // aba Histórico da Rotina Home Care.
+      const limite = new Date();
+      limite.setHours(0, 0, 0, 0);
+      limite.setDate(limite.getDate() - 6);
+      const limiteStr = paraISO(limite);
+
+      const vejoTodas = temPapel(['admin', 'familia', 'enfermeiro', 'medico']);
+      const meuNome = normalizarNome(perfil?.nome);
+
+      const lista: ObservacaoAlerta[] = snapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<RotinaExecucao, 'id'>) }))
+        .filter((exec) => paraISO(exec.data) >= limiteStr)
+        .filter((exec) => vejoTodas || (!!meuNome && normalizarNome(exec.auxiliar) === meuNome))
+        .map((exec) => ({
+          id: exec.id,
+          tecnicoNome: exec.auxiliar ?? '',
+          data: paraISO(exec.data) || exec.data,
+          turno: exec.turno,
+          observacaoGeral: (exec.observacaoGeral ?? '').trim(),
+          itensComObservacao: (exec.itens ?? []).filter((i) => (i.observacao ?? '').trim()).length,
+        }))
+        .filter((o) => o.observacaoGeral || o.itensComObservacao > 0);
+
+      setObservacoesPlantao(lista);
+    } catch (error) {
+      console.error('Erro ao buscar observações de plantão:', error);
+    }
+  };
+
+  // Plantões recentes da PRÓPRIA pessoa logada com 100% da rotina concluída e
+  // que ela ainda não comemorou. É o card de parabéns do primeiro acesso depois
+  // do plantão. Janela de 7 dias para não despejar um backlog de plantões
+  // antigos de uma vez na primeira vez que a tela rodar.
+  const buscarParabensPlantao = async () => {
+    const meuNome = normalizarNome(perfil?.nome);
+    if (!meuNome) return;
+
+    try {
+      const snapshot = await getDocs(
+        query(collection(db, 'rotina-execucoes'), orderBy('data', 'desc'), limit(30))
+      );
+
+      const limite = new Date();
+      limite.setHours(0, 0, 0, 0);
+      limite.setDate(limite.getDate() - 6);
+      const limiteStr = paraISO(limite);
+
+      const lista: ParabensPlantao[] = snapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<RotinaExecucao, 'id'>) }))
+        .filter((exec) => paraISO(exec.data) >= limiteStr)
+        .filter((exec) => normalizarNome(exec.auxiliar) === meuNome)
+        .filter((exec) => !exec.parabensVistoEm)
+        .filter((exec) => (exec.itens?.length ?? 0) > 0 && exec.itens.every((i) => i.concluido))
+        .map((exec) => ({
+          id: exec.id,
+          data: paraISO(exec.data) || exec.data,
+          turno: exec.turno,
+          totalItens: exec.itens.length,
+        }));
+
+      setParabensPlantao(lista);
+    } catch (error) {
+      console.error('Erro ao buscar plantões 100%:', error);
+    }
+  };
+
+  // Marca o parabéns como visto para não reaparecer no próximo login.
+  const fecharParabens = async (id: string) => {
+    setParabensPlantao((prev) => prev.filter((p) => p.id !== id));
+    try {
+      await updateDoc(doc(db, 'rotina-execucoes', id), { parabensVistoEm: new Date().toISOString() });
+    } catch (error) {
+      console.error('Erro ao marcar parabéns como visto:', error);
     }
   };
 
@@ -355,6 +449,13 @@ const salvarReagendamento = async () => {
           Última atualização: {new Date().toLocaleDateString('pt-BR')}
         </p>
       </div>
+
+      {/* Parabéns pelo plantão 100% — primeira coisa que a técnica vê ao entrar. */}
+      <ParabensWidget
+        nome={perfil?.nome ?? ''}
+        plantoes={parabensPlantao}
+        onFechar={fecharParabens}
+      />
       {mostrarModalReagendar && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
     <div className="bg-white p-6 rounded-xl shadow-lg w-full max-w-md">
@@ -464,6 +565,8 @@ const salvarReagendamento = async () => {
           alertas={pendentes}
           folgas={folgasCobertura}
           onFazerCobertura={() => navigate('/escala')}
+          observacoes={observacoesPlantao}
+          onVerObservacao={() => navigate('/rotina', { state: { aba: 'observacoes' } })}
         />
       </div>
     </div>

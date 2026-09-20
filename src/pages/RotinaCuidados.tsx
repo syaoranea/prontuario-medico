@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo, Fragment } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   ClipboardList, CheckSquare, History, Plus, Edit2, Trash2, Save,
   Sun, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
   ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText,
-  Phone, UserPlus, BadgeCheck, Trophy, Crown, Star, Zap, Gift, Sparkles, Flame, Flag, GripVertical
+  Phone, UserPlus, BadgeCheck, Trophy, Crown, Star, Zap, Gift, Sparkles, Flame, Flag, GripVertical,
+  MessageSquare
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -19,6 +21,7 @@ import { useConfirm } from '../components/ConfirmProvider';
 import { useAuditoria } from '../config/auditoria';
 import { useAuth } from '../config/auth/authContext';
 import { formatarDataHoraBR, formatarDataBR, paraISO } from '../utils/datas';
+import { normalizarNome } from '../utils/texto';
 
 // ── Seed data (routine from the patient's home care plan) ──────────────────────
 
@@ -185,7 +188,11 @@ const RotinaCuidados: React.FC = () => {
   const { confirmar } = useConfirm();
   const { registrar } = useAuditoria();
   const { temPapel, perfil } = useAuth();
-  const [abaAtiva, setAbaAtiva] = useState<'rotina' | 'checklist' | 'historico' | 'tecnicos' | 'gamificacao'>('rotina');
+  // Quem chega pelo card de observação no Dashboard já cai na aba Histórico.
+  const abaInicial = (useLocation().state as { aba?: string } | null)?.aba;
+  const [abaAtiva, setAbaAtiva] = useState<'rotina' | 'checklist' | 'historico' | 'observacoes' | 'tecnicos' | 'gamificacao'>(
+    abaInicial === 'historico' || abaInicial === 'observacoes' ? abaInicial : 'rotina'
+  );
 
   // Gamificação
   const [pontosExtras, setPontosExtras] = useState<PontoExtra[]>([]);
@@ -196,6 +203,9 @@ const RotinaCuidados: React.FC = () => {
 
   // Filtro do histórico por técnico
   const [filtroTecnicoHist, setFiltroTecnicoHist] = useState<string>('todos');
+
+  // Filtro da aba Observações por técnico (independente do filtro do histórico)
+  const [filtroTecnicoObs, setFiltroTecnicoObs] = useState<string>('todos');
 
   // Placar: sub-abas e avaliação por tarefa
   const [abaPlacar, setAbaPlacar] = useState<'ranking' | 'avaliacao'>('ranking');
@@ -463,7 +473,7 @@ const RotinaCuidados: React.FC = () => {
   };
 
   useEffect(() => {
-    if (abaAtiva === 'historico') carregarHistorico();
+    if (abaAtiva === 'historico' || abaAtiva === 'observacoes') carregarHistorico();
     if (abaAtiva === 'gamificacao') { carregarHistorico(); carregarPontosExtras(); carregarAvaliacoes(); carregarCompeticao(); }
   }, [abaAtiva]);
 
@@ -729,9 +739,9 @@ const RotinaCuidados: React.FC = () => {
   };
 
   // Reordena um item dentro da seção (arrastar e soltar) e persiste o campo `ordem`.
-  const reordenarItem = async (secao: string, fromId: string, toId: string) => {
+  const reordenarItem = async (turno: 'manha' | 'noite', secao: string, fromId: string, toId: string) => {
     if (fromId === toId) return;
-    const secoes = itensPorTurnoSecao(turnoChecklist);
+    const secoes = itensPorTurnoSecao(turno);
     const lista = [...(secoes[secao] || [])];
     const fromIdx = lista.findIndex(i => i.id === fromId);
     const toIdx = lista.findIndex(i => i.id === toId);
@@ -811,6 +821,45 @@ const RotinaCuidados: React.FC = () => {
   };
 
   // ── Derived ────────────────────────────────────────────────────────────────
+
+  // Criar, editar, excluir e reordenar itens da rotina é exclusivo do admin.
+  // Os demais papéis enxergam a rotina apenas para consulta.
+  const podeEditarRotina = modo === 'paciente' && temPapel(['admin']);
+
+  // Histórico: gestão e família veem todos os plantões e a disponibilidade do
+  // serviço. O técnico só enxerga os plantões salvos no próprio nome.
+  const historicoCompleto = temPapel(['admin', 'familia', 'enfermeiro', 'medico']);
+
+  const execucoesVisiveis = useMemo(() => {
+    if (historicoCompleto) return execucoes;
+    const meuNome = normalizarNome(perfil?.nome);
+    return meuNome ? execucoes.filter(e => normalizarNome(e.auxiliar) === meuNome) : [];
+  }, [execucoes, historicoCompleto, perfil?.nome]);
+
+  // Todos os registros de observação já salvos: a observação geral do plantão e
+  // as observações item a item, com o item da rotina resolvido pelo id.
+  const observacoesRegistradas = useMemo(() => {
+    return execucoesVisiveis
+      .map(exec => {
+        const geral = (exec.observacaoGeral ?? '').trim();
+        const porItem = (exec.itens ?? [])
+          .filter(i => (i.observacao ?? '').trim())
+          .map(i => {
+            const item = itens.find(it => it.id === i.rotinaItemId);
+            return {
+              rotinaItemId: i.rotinaItemId,
+              horario: item?.horario ?? '',
+              descricao: item?.descricao ?? 'Item que não está mais na rotina',
+              concluido: i.concluido,
+              texto: (i.observacao ?? '').trim(),
+            };
+          })
+          .sort((a, b) => a.horario.localeCompare(b.horario));
+        return { exec, geral, porItem };
+      })
+      .filter(o => o.geral || o.porItem.length > 0);
+  }, [execucoesVisiveis, itens]);
+
   const itensPorTurnoSecao = (turno: 'manha' | 'noite') => {
     const filtrados = itens.filter(i => i.turno === turno && i.ativo);
     const secoes: Record<string, RotinaItem[]> = {};
@@ -881,8 +930,14 @@ const RotinaCuidados: React.FC = () => {
           { id: 'checklist', label: modo === 'auxiliar' ? 'Checklist do Turno' : 'Checklist', icon: CheckSquare },
           { id: 'tecnicos', label: 'Técnicos', icon: Stethoscope },
           { id: 'gamificacao', label: 'Placar', icon: Trophy },
+          { id: 'observacoes', label: 'Observações', icon: MessageSquare },
           { id: 'historico', label: 'Histórico', icon: History },
-        ].filter(tab => !['checklist', 'tecnicos'].includes(tab.id) || temPapel(['admin'])).map(tab => (
+        ].filter(tab => {
+          // Checklist e Técnicos: só admin. Placar: admin e família.
+          if (['checklist', 'tecnicos'].includes(tab.id)) return temPapel(['admin']);
+          if (tab.id === 'gamificacao') return temPapel(['admin', 'familia']);
+          return true;
+        }).map(tab => (
           <button
             key={tab.id}
             onClick={() => setAbaAtiva(tab.id as typeof abaAtiva)}
@@ -936,7 +991,28 @@ const RotinaCuidados: React.FC = () => {
                     {items.map(item => {
                       const resp = RESPONSAVEL_CONFIG[item.responsavel];
                       return (
-                        <div key={item.id} className="flex items-start gap-3 px-4 py-3">
+                        <div
+                          key={item.id}
+                          onDragOver={(e) => { if (podeEditarRotina && dragItemId && dragSecao === secao) { e.preventDefault(); setDragOverId(item.id); } }}
+                          onDragLeave={() => setDragOverId(prev => (prev === item.id ? null : prev))}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            if (podeEditarRotina && dragItemId && dragSecao === secao) reordenarItem(turnoAtivo, secao, dragItemId, item.id);
+                            setDragItemId(null); setDragSecao(null); setDragOverId(null);
+                          }}
+                          className={`flex items-start gap-3 px-4 py-3 ${dragOverId === item.id ? 'ring-2 ring-primary-300 ring-inset rounded-lg' : ''} ${dragItemId === item.id ? 'opacity-40' : ''}`}
+                        >
+                          {podeEditarRotina && (
+                            <span
+                              draggable
+                              onDragStart={() => { setDragItemId(item.id); setDragSecao(secao); }}
+                              onDragEnd={() => { setDragItemId(null); setDragSecao(null); setDragOverId(null); }}
+                              className="mt-0.5 cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 shrink-0"
+                              title="Arraste para reordenar"
+                            >
+                              <GripVertical size={16} />
+                            </span>
+                          )}
                           <span className="text-xs font-mono text-gray-400 mt-0.5 min-w-[38px]">{item.horario}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -944,7 +1020,7 @@ const RotinaCuidados: React.FC = () => {
                             </div>
                             <p className="text-sm text-gray-700 leading-relaxed">{item.descricao}</p>
                           </div>
-                          {modo === 'paciente' && (
+                          {podeEditarRotina && (
                             <div className="flex items-center gap-1 ml-2 shrink-0">
                               <button onClick={() => abrirModalEditar(item)} className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-colors">
                                 <Edit2 size={14} />
@@ -961,7 +1037,7 @@ const RotinaCuidados: React.FC = () => {
                 </div>
               ))}
 
-              {modo === 'paciente' && (
+              {podeEditarRotina && (
                 <button
                   onClick={abrirModalNovo}
                   className="flex items-center gap-2 w-full justify-center px-4 py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-primary-300 hover:text-primary-600 hover:bg-primary-50 transition-all mt-2"
@@ -1092,7 +1168,7 @@ const RotinaCuidados: React.FC = () => {
                           onDragLeave={() => setDragOverId(prev => (prev === item.id ? null : prev))}
                           onDrop={(e) => {
                             e.preventDefault();
-                            if (dragItemId && dragSecao === secao) reordenarItem(secao, dragItemId, item.id);
+                            if (dragItemId && dragSecao === secao) reordenarItem(turnoChecklist, secao, dragItemId, item.id);
                             setDragItemId(null); setDragSecao(null); setDragOverId(null);
                           }}
                           className={`px-4 py-3 transition-colors ${check.concluido ? 'bg-green-50/50' : ''} ${dragOverId === item.id ? 'ring-2 ring-primary-300 ring-inset rounded-lg' : ''} ${dragItemId === item.id ? 'opacity-40' : ''}`}
@@ -1223,7 +1299,7 @@ const RotinaCuidados: React.FC = () => {
       )}
 
       {/* ── ABA: GAMIFICAÇÃO ────────────────────────────────────────────── */}
-      {abaAtiva === 'gamificacao' && (
+      {abaAtiva === 'gamificacao' && temPapel(['admin', 'familia']) && (
         <div>
           {/* Banner */}
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-600 p-6 text-white mb-5 shadow-lg">
@@ -1565,10 +1641,130 @@ const RotinaCuidados: React.FC = () => {
         </div>
       )}
 
+      {/* ── ABA: OBSERVAÇÕES ────────────────────────────────────────────── */}
+      {abaAtiva === 'observacoes' && (
+        <div>
+          {carregandoExec ? (
+            <div className="flex items-center justify-center py-12 text-gray-400">
+              <RefreshCw size={20} className="animate-spin mr-2" /> Carregando observações...
+            </div>
+          ) : observacoesRegistradas.length === 0 ? (
+            <div className="text-center py-16 text-gray-400">
+              <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">
+                {historicoCompleto ? 'Nenhuma observação registrada ainda.' : 'Você ainda não registrou observações.'}
+              </p>
+              <p className="text-xs mt-1">As observações salvas no checklist do plantão aparecem aqui.</p>
+            </div>
+          ) : (() => {
+            const nomesComObs = Array.from(
+              new Set(observacoesRegistradas.map(o => o.exec.auxiliar).filter(Boolean))
+            ).sort((a, b) => a.localeCompare(b));
+            const lista = filtroTecnicoObs === 'todos'
+              ? observacoesRegistradas
+              : observacoesRegistradas.filter(o => o.exec.auxiliar === filtroTecnicoObs);
+            const totalObs = lista.reduce((soma, o) => soma + (o.geral ? 1 : 0) + o.porItem.length, 0);
+            return (
+            <div className="space-y-3">
+              {/* Filtro por técnico — só faz sentido para quem vê todos os plantões. */}
+              <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap">
+                <MessageSquare size={16} className="text-gray-400" />
+                {historicoCompleto ? (
+                  <>
+                    <label className="text-sm text-gray-600">Técnico:</label>
+                    <select
+                      value={filtroTecnicoObs}
+                      onChange={e => setFiltroTecnicoObs(e.target.value)}
+                      className="py-1.5 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
+                    >
+                      <option value="todos">Todos os técnicos</option>
+                      {nomesComObs.map(nome => (
+                        <option key={nome} value={nome}>{nome}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <span className="text-sm text-gray-600">Suas observações</span>
+                )}
+                <span className="text-xs text-gray-400 ml-auto">
+                  {totalObs} observação(ões) em {lista.length} plantão(ões)
+                </span>
+              </div>
+
+              {lista.length === 0 ? (
+                <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">
+                  <p className="text-sm">Nenhuma observação para este técnico.</p>
+                </div>
+              ) : (
+                lista.map(({ exec, geral, porItem }) => {
+                  const cfg = TURNO_CONFIG[exec.turno];
+                  const Icon = cfg.icon;
+                  return (
+                    <div key={exec.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-50">
+                        <div className={`p-2 rounded-lg ${cfg.bg}`}>
+                          <Icon size={16} className={cfg.color} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-gray-800">{formatarData(exec.data)}</span>
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">Técnico: {exec.auxiliar || '—'}</p>
+                        </div>
+                        {temPapel(['admin']) && (
+                          <button
+                            onClick={() => {
+                              setDataChecklist(exec.data);
+                              setTurnoChecklist(exec.turno);
+                              setAbaAtiva('checklist');
+                            }}
+                            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-primary-200 bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors"
+                          >
+                            <Edit2 size={13} /> Abrir checklist
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="px-4 py-3 space-y-3">
+                        {geral && (
+                          <div className="rounded-lg bg-amber-50 border border-amber-100 p-3">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-amber-700 mb-1">
+                              Observação do plantão
+                            </p>
+                            <p className="text-sm text-gray-700 whitespace-pre-line">{geral}</p>
+                          </div>
+                        )}
+
+                        {porItem.map(o => (
+                          <div key={o.rotinaItemId} className="flex items-start gap-3">
+                            <span className="text-xs font-mono text-gray-400 mt-0.5 min-w-[38px]">{o.horario || '--:--'}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-gray-500">{o.descricao}</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-line mt-0.5">{o.texto}</p>
+                            </div>
+                            <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0 ${o.concluido ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {o.concluido ? 'Concluído' : 'Não concluído'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* ── ABA: HISTÓRICO ──────────────────────────────────────────────── */}
       {abaAtiva === 'historico' && (
         <div>
-          {/* Card de disponibilidade do serviço */}
+          {/* Card de disponibilidade do serviço — métrica do serviço inteiro,
+              por isso fica só para gestão e família. */}
+          {historicoCompleto && (
           <div className="bg-white rounded-xl border border-gray-100 p-5 mb-4">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600"><Activity size={18} /></div>
@@ -1606,41 +1802,54 @@ const RotinaCuidados: React.FC = () => {
               </div>
             )}
           </div>
+          )}
 
           {carregandoExec ? (
             <div className="flex items-center justify-center py-12 text-gray-400">
               <RefreshCw size={20} className="animate-spin mr-2" /> Carregando histórico...
             </div>
-          ) : execucoes.length === 0 ? (
+          ) : execucoesVisiveis.length === 0 ? (
             <div className="text-center py-16 text-gray-400">
               <History size={40} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Nenhum registro ainda.</p>
-              <p className="text-xs mt-1">Os check-ins salvos pelo técnico aparecerão aqui.</p>
+              <p className="text-sm">{historicoCompleto ? 'Nenhum registro ainda.' : 'Você ainda não tem plantões registrados.'}</p>
+              <p className="text-xs mt-1">
+                {historicoCompleto
+                  ? 'Os check-ins salvos pelo técnico aparecerão aqui.'
+                  : 'Os checklists que você salvar aparecerão aqui.'}
+              </p>
             </div>
           ) : (() => {
             // Nomes de técnicos presentes no histórico (para o filtro).
-            const nomesNoHistorico = Array.from(new Set(execucoes.map(e => e.auxiliar).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+            const nomesNoHistorico = Array.from(new Set(execucoesVisiveis.map(e => e.auxiliar).filter(Boolean))).sort((a, b) => a.localeCompare(b));
             const execucoesFiltradas = filtroTecnicoHist === 'todos'
-              ? execucoes
-              : execucoes.filter(e => e.auxiliar === filtroTecnicoHist);
+              ? execucoesVisiveis
+              : execucoesVisiveis.filter(e => e.auxiliar === filtroTecnicoHist);
             return (
             <div className="space-y-3">
-              {/* Filtro por técnico */}
-              <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap">
-                <Stethoscope size={16} className="text-gray-400" />
-                <label className="text-sm text-gray-600">Técnico:</label>
-                <select
-                  value={filtroTecnicoHist}
-                  onChange={e => setFiltroTecnicoHist(e.target.value)}
-                  className="py-1.5 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
-                >
-                  <option value="todos">Todos os técnicos</option>
-                  {nomesNoHistorico.map(nome => (
-                    <option key={nome} value={nome}>{nome}</option>
-                  ))}
-                </select>
-                <span className="text-xs text-gray-400 ml-auto">{execucoesFiltradas.length} plantão(ões)</span>
-              </div>
+              {/* Filtro por técnico — só faz sentido para quem vê o histórico inteiro. */}
+              {historicoCompleto ? (
+                <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap">
+                  <Stethoscope size={16} className="text-gray-400" />
+                  <label className="text-sm text-gray-600">Técnico:</label>
+                  <select
+                    value={filtroTecnicoHist}
+                    onChange={e => setFiltroTecnicoHist(e.target.value)}
+                    className="py-1.5 px-3 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-300"
+                  >
+                    <option value="todos">Todos os técnicos</option>
+                    {nomesNoHistorico.map(nome => (
+                      <option key={nome} value={nome}>{nome}</option>
+                    ))}
+                  </select>
+                  <span className="text-xs text-gray-400 ml-auto">{execucoesFiltradas.length} plantão(ões)</span>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-gray-100 p-3 flex items-center gap-2 flex-wrap">
+                  <Stethoscope size={16} className="text-gray-400" />
+                  <span className="text-sm text-gray-600">Seus plantões</span>
+                  <span className="text-xs text-gray-400 ml-auto">{execucoesFiltradas.length} plantão(ões)</span>
+                </div>
+              )}
 
               {execucoesFiltradas.length === 0 ? (
                 <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-100">
@@ -1783,6 +1992,7 @@ const RotinaCuidados: React.FC = () => {
                     { n: 8, titulo: 'Doença: avisar com antecedência', desc: 'Se estiver com sintomas gripais ou febre, avisar a empresa de home care com antecedência para substituição.' },
                     { n: 9, titulo: 'Respeito mútuo', desc: 'Este é o lar do paciente. Barulho, conversas altas e uso da TV em volume alto não são permitidos após as 22h.' },
                     { n: 10, titulo: 'Trocar de roupa ao começar plantão', desc: 'Ao chegar, trocar a roupa da rua por uniforme limpo antes de entrar no quarto do paciente. Roupa de rua pode carregar agentes contaminantes — especialmente importante para AME tipo 2 com risco respiratório. O técnico deve trazer seu próprio uniforme limpo a cada plantão.', obs: 'Vestir o uniforme por cima da blusa.' },
+                    { n: 11, titulo: 'Folga ou falta: garantir a cobertura', desc: 'Ao solicitar folga ou precisar faltar, procure a cobertura primeiro com uma plantonista do mesmo turno. Se ela não puder cobrir, procure uma plantonista de outro turno. O paciente não pode ficar sem cobertura da equipe.', obs: 'Registre a folga na aba Escala — quem vai cobrir confirma por lá, no botão "Fazer cobertura".' },
                   ].map(({ n, titulo, desc, obs }) => (
                     <div key={n} className="flex gap-3 p-3 rounded-xl bg-gray-50 border border-gray-100">
                       <span className="shrink-0 w-6 h-6 rounded-full bg-amber-100 text-amber-700 text-xs font-bold flex items-center justify-center mt-0.5">{n}</span>

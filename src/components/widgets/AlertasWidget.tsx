@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee } from 'lucide-react';
+import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee, MessageSquare } from 'lucide-react';
 import { Agendamento } from '../../interface/interface';
 import { formatarDataBR } from '../../utils/datas';
 
@@ -10,10 +10,22 @@ export interface FolgaAlerta {
   turno?: 'diurno' | 'noturno';
 }
 
+/** Observação deixada pela técnica no checklist do plantão. */
+export interface ObservacaoAlerta {
+  id: string;
+  tecnicoNome: string;
+  data: string; // ISO (YYYY-MM-DD)
+  turno: 'manha' | 'noite';
+  observacaoGeral: string;
+  itensComObservacao: number;
+}
+
 interface AlertaWidgetProps {
   alertas: Agendamento[];
   folgas?: FolgaAlerta[];
   onFazerCobertura?: (folga: FolgaAlerta) => void;
+  observacoes?: ObservacaoAlerta[];
+  onVerObservacao?: (observacao: ObservacaoAlerta) => void;
 }
 
 interface Alerta {
@@ -59,6 +71,8 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
   alertas,
   folgas,
   onFazerCobertura,
+  observacoes,
+  onVerObservacao,
   }) => {
 
   return (
@@ -70,6 +84,41 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
         </div>
         <button className="text-sm text-primary-600 hover:text-primary-700">Ver todos</button>
       </div>
+
+      {/* Observações deixadas pela técnica no checklist do plantão */}
+      {observacoes && observacoes.length > 0 && (
+        <div className="space-y-3 mb-3">
+          {observacoes.map((o) => (
+            <div key={o.id} className="p-4 border rounded-lg bg-blue-50 border-blue-100 flex items-start space-x-3">
+              <div className="p-2 rounded-full bg-blue-100 text-blue-600 shrink-0">
+                <MessageSquare size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">
+                  {o.tecnicoNome || 'A técnica'} deixou uma observação no plantão
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatarDataBR(o.data)} · {o.turno === 'noite' ? 'Noite' : 'Manhã'}
+                </p>
+                {o.observacaoGeral && (
+                  <p className="text-sm text-gray-700 mt-2 whitespace-pre-line line-clamp-3">{o.observacaoGeral}</p>
+                )}
+                {o.itensComObservacao > 0 && (
+                  <p className="text-xs text-blue-700 mt-1">
+                    +{o.itensComObservacao} observação(ões) em itens do checklist
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => onVerObservacao?.(o)}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+              >
+                Ver observação
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Folgas solicitadas aguardando cobertura */}
       {folgas && folgas.length > 0 && (
@@ -132,7 +181,8 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
         ))} */}
 
         {(!alertas || alertas.length === 0) ? (
-          (!folgas || folgas.length === 0) && <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
+          (!folgas || folgas.length === 0) &&
+          (!observacoes || observacoes.length === 0) && <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
         ) : (
           alertas.map((alerta) => (
             <div 

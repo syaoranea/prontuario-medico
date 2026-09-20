@@ -226,6 +226,15 @@ const Escala: React.FC = () => {
   ];
   const hojeISO = isoDe(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
 
+  // Folga cujo dia já chegou (ou passou) sem ninguém ter confirmado a cobertura:
+  // o paciente fica sem equipe naquele turno, então é destacado em vermelho.
+  const folgasSemCoberturaNoDia = (dataISO: string, turno: 'diurno' | 'noturno') =>
+    dataISO <= hojeISO
+      ? Object.values(folgas).filter(
+          (f) => f.data === dataISO && (f.turno || 'diurno') === turno && !f.cobertoPor
+        )
+      : [];
+
   const diaSelNum = diaSel ? Number(diaSel.split('-')[2]) : 0;
   const escalaDoDiaSel = diaSel ? escala.filter((e) => e.paridade === (diaSelNum % 2 === 0 ? 'par' : 'impar')) : [];
 
@@ -285,13 +294,21 @@ const Escala: React.FC = () => {
                 const noturno = escaladosNoDia(dia, dataISO, 'noturno');
                 const cobDiurno = coberturasNoDia(dataISO, 'diurno');
                 const cobNoturno = coberturasNoDia(dataISO, 'noturno');
+                const semCobDiurno = folgasSemCoberturaNoDia(dataISO, 'diurno');
+                const semCobNoturno = folgasSemCoberturaNoDia(dataISO, 'noturno');
+                // Dia com algum turno descoberto ganha borda vermelha.
+                const diaDescoberto = semCobDiurno.length > 0 || semCobNoturno.length > 0;
                 const ehHoje = dataISO === hojeISO;
                 return (
                   <button
                     key={dataISO}
                     onClick={() => setDiaSel(dataISO)}
-                    className={`min-h-[88px] sm:min-h-[112px] rounded-lg border p-1 text-left transition-colors flex flex-col ${
-                      ehHoje ? 'border-primary-400 bg-primary-50/40' : 'border-gray-100 hover:bg-gray-50'
+                    className={`min-h-[88px] sm:min-h-[112px] rounded-lg p-1 text-left transition-colors flex flex-col ${
+                      diaDescoberto
+                        ? `border-2 border-red-500 ${ehHoje ? 'bg-primary-50/40' : 'bg-red-50/40 hover:bg-red-50/70'}`
+                        : ehHoje
+                        ? 'border border-primary-400 bg-primary-50/40'
+                        : 'border border-gray-100 hover:bg-gray-50'
                     }`}
                   >
                     <span className={`text-xs font-semibold px-0.5 ${ehHoje ? 'text-primary-600' : 'text-gray-400'}`}>{dia}</span>
@@ -305,6 +322,9 @@ const Escala: React.FC = () => {
                           {cobDiurno.map((f) => (
                             <span key={`c${f.tecnicoId}`} className="text-[10px] leading-tight font-semibold px-1 py-0.5 rounded break-words bg-emerald-100 text-emerald-700" title={`${f.cobertoPorNome} cobrindo ${f.tecnicoNome}`}>{f.cobertoPorNome} <span className="opacity-70">(cob.)</span></span>
                           ))}
+                          {semCobDiurno.map((f) => (
+                            <span key={`s${f.tecnicoId}`} className="text-[10px] leading-tight font-bold px-1 py-0.5 rounded break-words bg-red-50 text-red-600" title={`Folga de ${f.tecnicoNome} sem cobertura`}>Folga sem cobertura · {f.tecnicoNome}</span>
+                          ))}
                         </div>
                       </div>
                       <div className="rounded bg-indigo-50/70 flex items-start gap-1 px-1 py-0.5">
@@ -315,6 +335,9 @@ const Escala: React.FC = () => {
                           ))}
                           {cobNoturno.map((f) => (
                             <span key={`c${f.tecnicoId}`} className="text-[10px] leading-tight font-semibold px-1 py-0.5 rounded break-words bg-emerald-100 text-emerald-700" title={`${f.cobertoPorNome} cobrindo ${f.tecnicoNome}`}>{f.cobertoPorNome} <span className="opacity-70">(cob.)</span></span>
+                          ))}
+                          {semCobNoturno.map((f) => (
+                            <span key={`s${f.tecnicoId}`} className="text-[10px] leading-tight font-bold px-1 py-0.5 rounded break-words bg-red-50 text-red-600" title={`Folga de ${f.tecnicoNome} sem cobertura`}>Folga sem cobertura · {f.tecnicoNome}</span>
                           ))}
                         </div>
                       </div>
@@ -451,15 +474,21 @@ const Escala: React.FC = () => {
                             const key = `${e.id}_${diaSel}`;
                             const folga = folgas[key];
                             const editandoCob = coberturaPara === key;
+                            // Chegou o dia da folga e ninguém confirmou cobertura.
+                            const semCobertura = !!folga && !folga.cobertoPor && diaSel <= hojeISO;
                             return (
-                              <div key={e.id} className={`p-3 rounded-xl border ${folga ? (folga.cobertoPor ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50') : 'border-gray-100'}`}>
+                              <div key={e.id} className={`p-3 rounded-xl border ${folga ? (folga.cobertoPor ? 'border-emerald-200 bg-emerald-50' : semCobertura ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50') : 'border-gray-100'}`}>
                                 <div className="flex items-center gap-3">
                                   <span className={`text-xs font-bold px-2 py-1 rounded shrink-0 ${corPorId[e.id]}`}>{e.inicial}</span>
                                   <div className="flex-1 min-w-0">
                                     <p className="text-sm font-medium text-gray-800 truncate">{e.tecnicoNome}</p>
-                                    <p className="text-[11px] text-gray-400">
-                                      {!folga ? 'Escalado' : folga.cobertoPor ? `Coberto por ${folga.cobertoPorNome}` : 'De folga — sem cobertura'}
-                                    </p>
+                                    {semCobertura ? (
+                                      <p className="text-[11px] font-bold text-red-600">Folga sem cobertura · {e.tecnicoNome}</p>
+                                    ) : (
+                                      <p className="text-[11px] text-gray-400">
+                                        {!folga ? 'Escalado' : folga.cobertoPor ? `Coberto por ${folga.cobertoPorNome}` : 'De folga — aguardando cobertura'}
+                                      </p>
+                                    )}
                                   </div>
                                   <div className="flex flex-col items-end gap-1 shrink-0">
                                     {!folga && (

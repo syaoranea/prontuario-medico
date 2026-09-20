@@ -98,4 +98,6 @@ export interface RotinaExecucao {
   observacaoGeral: string;
   criadoEm: string;
   atualizadoEm: string;
+  /** Quando a técnica fechou o card de parabéns do plantão 100% (ISO). */
+  parabensVistoEm?: string;
 }
