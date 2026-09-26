@@ -141,7 +141,7 @@ const Dashboard: React.FC = () => {
       const lista: FolgaAlerta[] = snapshot.docs
         .map((d) => ({ id: d.id, ...(d.data() as any) }))
         .filter((f) => !f.cobertoPor && typeof f.data === 'string' && f.data >= hojeStr)
-        .map((f) => ({ id: f.id, tecnicoNome: f.tecnicoNome, data: f.data, turno: f.turno }));
+        .map((f) => ({ id: f.id, tecnicoNome: f.tecnicoNome, data: f.data, turno: f.turno, tipo: f.tipo }));
       setFolgasCobertura(lista);
     } catch (error) {
       console.error('Erro ao buscar folgas:', error);

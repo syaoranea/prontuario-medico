@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import PerfilPaciente from './pages/PerfilPaciente';
 import HistoricoMedico from './pages/HistoricoMedico';
 import Medicamentos from './pages/Medicamentos';
+import Suprimentos from './pages/Suprimentos';
 import Agendamentos from './pages/Agendamentos';
 import Metricas from './pages/Metricas';
 import Documentos from './pages/Documentos';
@@ -90,6 +91,8 @@ const AppGate: React.FC = () => {
               </RequireRole>
             }
           />
+          {/* Suprimentos: todos veem o estoque; escrever depende do papel (na própria tela e nas regras). */}
+          <Route path="/suprimentos" element={<Suprimentos />} />
           <Route path="/metricas" element={<Metricas />} />
           <Route path="/documentos" element={<Documentos />} />
           <Route

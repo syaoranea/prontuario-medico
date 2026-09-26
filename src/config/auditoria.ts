@@ -20,7 +20,10 @@ export type EntidadeAuditoria =
   | 'avaliacao-tarefa'
   | 'competicao'
   | 'escala'
-  | 'plantao';
+  | 'plantao'
+  | 'suprimento'
+  | 'suprimento-movimento'
+  | 'troca-plantao';
 
 export const ACAO_LABEL: Record<AcaoAuditoria, string> = {
   criar: 'Criou',
@@ -46,6 +49,9 @@ export const ENTIDADE_LABEL: Record<EntidadeAuditoria, string> = {
   competicao: 'Competição',
   escala: 'Escala / folga',
   plantao: 'Encerramento de plantão',
+  suprimento: 'Suprimento',
+  'suprimento-movimento': 'Movimento de estoque',
+  'troca-plantao': 'Troca de plantão',
 };
 
 /**

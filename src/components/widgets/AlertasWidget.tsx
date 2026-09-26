@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee, MessageSquare } from 'lucide-react';
+import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee, MessageSquare, UserX } from 'lucide-react';
 import { Agendamento } from '../../interface/interface';
 import { formatarDataBR } from '../../utils/datas';
 
@@ -8,6 +8,8 @@ export interface FolgaAlerta {
   tecnicoNome: string;
   data: string;
   turno?: 'diurno' | 'noturno';
+  /** Ausente = folga (registros antigos). 'falta' = não compareceu ao plantão. */
+  tipo?: 'folga' | 'falta';
 }
 
 /** Observação deixada pela técnica no checklist do plantão. */
@@ -123,13 +125,17 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
       {/* Folgas solicitadas aguardando cobertura */}
       {folgas && folgas.length > 0 && (
         <div className="space-y-3 mb-3">
-          {folgas.map((f) => (
-            <div key={f.id} className="p-4 border rounded-lg bg-amber-50 border-amber-100 flex items-start space-x-3">
-              <div className="p-2 rounded-full bg-amber-100 text-amber-600 shrink-0">
-                <Coffee size={18} />
+          {folgas.map((f) => {
+            const falta = f.tipo === 'falta';
+            return (
+            <div key={f.id} className={`p-4 border rounded-lg flex items-start space-x-3 ${falta ? 'bg-red-50 border-red-100' : 'bg-amber-50 border-amber-100'}`}>
+              <div className={`p-2 rounded-full shrink-0 ${falta ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                {falta ? <UserX size={18} /> : <Coffee size={18} />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800">{f.tecnicoNome} solicitou folga</p>
+                <p className="text-sm font-medium text-gray-800">
+                  {falta ? `${f.tecnicoNome} não compareceu ao plantão` : `${f.tecnicoNome} solicitou folga`}
+                </p>
                 <p className="text-xs text-gray-500 mt-1">
                   {formatarDataBR(f.data)}{f.turno ? ` · ${f.turno === 'noturno' ? 'Noturno' : 'Diurno'}` : ''}
                 </p>
@@ -141,7 +147,8 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
                 Fazer cobertura
               </button>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

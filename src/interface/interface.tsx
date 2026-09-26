@@ -89,6 +89,42 @@ export interface ItemExecucao {
   horarioConcluido?: string;
 }
 
+/** Item de consumo do home care (sonda, luva, pró-pé, soro...). */
+export interface Suprimento {
+  id: string;
+  nome: string;
+  categoria: 'material' | 'medicamento' | 'higiene';
+  /** Unidade de consumo: 'un', 'pc', 'bolsa', 'ampola'... */
+  unidade: string;
+  /** Embalagem de compra, quando o item vem em caixa/pacote. */
+  unidadeCompra?: string;
+  /** Quantas unidades vêm em cada embalagem de compra. */
+  qtdPorEmbalagem?: number;
+  /** Quantidade consumida por dia — base da baixa automática (fase 2). */
+  consumoDiario: number;
+  /** Avisar quando faltarem menos que estes dias de estoque. */
+  alertaDias: number;
+  ativo: boolean;
+}
+
+/**
+ * Livro-razão do estoque: o saldo é a SOMA dos movimentos, nunca um campo
+ * sobrescrito. `quantidade` é sempre assinada (entra positivo, sai negativo).
+ * Movimento é imutável — erro se corrige com outro movimento.
+ */
+export interface MovimentoSuprimento {
+  id: string;
+  suprimentoId: string;
+  tipo: 'entrada' | 'consumo' | 'ajuste' | 'contagem';
+  quantidade: number;
+  data: string; // YYYY-MM-DD
+  origem: 'automatico' | 'manual' | 'dispensacao';
+  quem: string;
+  quemNome: string;
+  criadoEm: string;
+  observacao?: string;
+}
+
 export interface RotinaExecucao {
   id: string;
   data: string; // YYYY-MM-DD

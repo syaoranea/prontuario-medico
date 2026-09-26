@@ -122,6 +122,34 @@ service cloud.firestore {
       allow read: if membroAtivo();
       allow write: if membroAtivo();
     }
+    // Troca pontual de plantão entre duas técnicas: todos leem, a equipe
+    // clínica registra e desfaz (família não mexe na escala de ninguém).
+    match /trocas/{doc} {
+      allow read: if membroAtivo();
+      allow write: if equipeClinica();
+    }
+
+    // ── Suprimentos ─────────────────────────────────────────────────────────
+    // Cadastro do item (nome, consumo diário, alerta): só admin mexe.
+    match /suprimentos/{doc} {
+      allow read: if membroAtivo();
+      allow write: if ehAdmin();
+    }
+    // Livro-razão do estoque: append-only, igual à auditoria. O saldo é a soma
+    // dos movimentos, então um movimento errado se corrige com outro — nunca
+    // editando ou apagando o histórico.
+    // Entrada (chegada de dispensação) é de enfermeiro/médico/admin;
+    // ajuste e contagem a equipe clínica toda faz, inclusive o técnico.
+    match /suprimentos-movimentos/{doc} {
+      allow read: if membroAtivo();
+      allow create: if equipeClinica()
+        && request.resource.data.quem == request.auth.uid
+        && (
+          request.resource.data.tipo != 'entrada'
+          || papel() in ['enfermeiro', 'medico', 'admin']
+        );
+      allow update, delete: if false;
+    }
 
     // ── Trilha de auditoria ─────────────────────────────────────────────────
     // Append-only e imutável: qualquer membro da equipe clínica REGISTRA ações

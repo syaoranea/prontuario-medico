@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   Home, User, FileText, Pill, Calendar, LineChart,
-  FolderClosed, Settings, Menu, X, Users, Heart, LogOut, ShieldCheck, History, Camera
+  FolderClosed, Settings, Menu, X, Users, Heart, LogOut, ShieldCheck, History, Camera, Package
 } from 'lucide-react';
 import { useState } from 'react';
 import { Papel, PAPEL_LABEL, useAuth } from '../config/auth/authContext';
@@ -24,6 +24,7 @@ const Sidebar: React.FC = () => {
     { path: '/perfil', icon: <User size={20} />, label: 'Perfil' },
     { path: '/historico', icon: <FileText size={20} />, label: 'Histórico' },
     { path: '/medicamentos', icon: <Pill size={20} />, label: 'Medicamentos', papeis: EQUIPE_CLINICA },
+    { path: '/suprimentos', icon: <Package size={20} />, label: 'Suprimentos' },
     { path: '/agendamentos', icon: <Calendar size={20} />, label: 'Agendamentos', papeis: EQUIPE_CLINICA },
     { path: '/metricas', icon: <LineChart size={20} />, label: 'Métricas' },
     { path: '/documentos', icon: <FolderClosed size={20} />, label: 'Documentos' },
