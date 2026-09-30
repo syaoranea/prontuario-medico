@@ -129,6 +129,15 @@ service cloud.firestore {
       allow write: if equipeClinica();
     }
 
+    // Plantões encerrados (id = {data}_{turno}). A equipe clínica registra o
+    // encerramento; todos leem, porque o calendário de pendências é da casa.
+    // Ninguém apaga: relatório enviado é registro do que aconteceu.
+    match /plantoes-encerrados/{doc} {
+      allow read: if membroAtivo();
+      allow create, update: if equipeClinica();
+      allow delete: if false;
+    }
+
     // ── Suprimentos ─────────────────────────────────────────────────────────
     // Cadastro do item (nome, consumo diário, alerta): só admin mexe.
     match /suprimentos/{doc} {

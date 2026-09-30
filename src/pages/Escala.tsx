@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Calendar, ChevronLeft, ChevronRight, Plus, X, Trash2, RefreshCw, Coffee, Sun, Moon, UserPlus, UserX, ArrowLeftRight,
+  CalendarCheck,
 } from 'lucide-react';
 import { addDoc, collection, getDocs, setDoc, updateDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -10,85 +11,11 @@ import { useFeedback } from '../components/FeedbackProvider';
 import { useConfirm } from '../components/ConfirmProvider';
 import { useAuditoria } from '../config/auditoria';
 import { formatarDataBR } from '../utils/datas';
-
-/**
- * Uma vigência de escala: técnico X cobre o turno Y nos dias pares/ímpares,
- * de `inicio` até `fim`. Trocar a escala NÃO reescreve o passado — encerra a
- * vigência atual (fim = ontem) e abre uma nova a partir de hoje.
- *
- * Registros antigos não têm `tecnicoId` (o id do documento era o do técnico)
- * nem `inicio`/`fim` — esses valem "desde sempre e até hoje", preservando o
- * calendário como ele sempre foi exibido.
- */
-interface EscalaItem {
-  id: string;
-  tecnicoId?: string;
-  tecnicoNome: string;
-  inicial: string;
-  paridade: 'par' | 'impar';
-  turno: 'diurno' | 'noturno';
-  inicio?: string;      // ISO — vale a partir de (ausente = desde sempre)
-  fim?: string | null;  // ISO — vale até, inclusive (ausente/null = em vigor)
-}
-
-/** Registros antigos guardavam o id do técnico no próprio id do documento. */
-const tecnicoIdDe = (e: EscalaItem) => e.tecnicoId || e.id;
-
-/** A vigência cobre aquela data? */
-const vigenteEm = (e: EscalaItem, dataISO: string) =>
-  (!e.inicio || dataISO >= e.inicio) && (!e.fim || dataISO <= e.fim);
-
-/**
- * Ausência de um técnico num dia/turno. A coleção continua se chamando `folgas`
- * por compatibilidade com o que já está gravado, mas hoje guarda dois casos:
- *
- * - `folga`: combinada antes, o técnico avisa e procura cobertura.
- * - `falta`: o técnico não compareceu ao plantão.
- *
- * Registros antigos não têm `tipo` — são folgas.
- */
-interface Folga {
-  tecnicoId: string;
-  tecnicoNome: string;
-  data: string; // ISO
-  turno: 'diurno' | 'noturno';
-  tipo?: 'folga' | 'falta';
-  /** Só para falta: avisou antes (doença, imprevisto) ou simplesmente não veio. */
-  avisou?: boolean;
-  motivo?: string;
-  cobertoPor?: string;      // tecnicoId de quem cobre
-  cobertoPorNome?: string;
-}
-
-const ehFalta = (f?: Folga) => f?.tipo === 'falta';
-const rotuloAusencia = (f?: Folga) => (ehFalta(f) ? 'Falta' : 'Folga');
-
-/**
- * Troca pontual de plantão entre duas técnicas. Diferente de cobertura, que é
- * de mão única: aqui cada uma assume o plantão da outra.
- *
- * `origem` é quem propôs (cede o plantão dela) e `destino` é quem aceita. No
- * dia/turno da origem quem trabalha é a destino, e no dia/turno da destino
- * quem trabalha é a origem. Dia e turno são livres — não precisam ser da
- * mesma paridade nem do mesmo turno.
- */
-interface TrocaPlantao {
-  id: string;
-  origemTecnicoId: string;
-  origemTecnicoNome: string;
-  origemData: string; // ISO
-  origemTurno: 'diurno' | 'noturno';
-  destinoTecnicoId: string;
-  destinoTecnicoNome: string;
-  destinoData: string; // ISO
-  destinoTurno: 'diurno' | 'noturno';
-  criadoEm: string;
-  criadoPorNome: string;
-  observacao?: string;
-}
-
-const chaveSlot = (tecnicoId: string, data: string, turno: string) => `${tecnicoId}_${data}_${turno}`;
-const rotuloTurno = (t: string) => (t === 'noturno' ? 'Noturno' : 'Diurno');
+import {
+  EscalaItem, Folga, TrocaPlantao, chaveSlot, ehFalta, iniciaisDe, isoDe,
+  rotuloAusencia, rotuloTurno, tecnicoIdDe, vigenteEm,
+} from '../utils/escala';
+import CalendarioPlantoes from '../components/CalendarioPlantoes';
 
 const MESES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -98,14 +25,6 @@ const CORES = [
   'bg-indigo-100 text-indigo-700', 'bg-teal-100 text-teal-700',
 ];
 
-const iniciaisDe = (nome: string) => {
-  const p = nome.trim().split(/\s+/).filter(Boolean);
-  if (p.length === 0) return '?';
-  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
-  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
-};
-const isoDe = (ano: number, mes: number, dia: number) =>
-  `${ano}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
 
 const Escala: React.FC = () => {
   const { temPapel, perfil } = useAuth();
@@ -122,6 +41,7 @@ const Escala: React.FC = () => {
   const [folgas, setFolgas] = useState<Record<string, Folga>>({});
   const [trocas, setTrocas] = useState<TrocaPlantao[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [abaAtiva, setAbaAtiva] = useState<'escala' | 'plantoes'>('escala');
 
   const hoje = new Date();
   const [refMes, setRefMes] = useState(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
@@ -423,6 +343,27 @@ const Escala: React.FC = () => {
   const removerAusencia = async (item: EscalaItem, dataISO: string) => {
     const key = `${tecnicoIdDe(item)}_${dataISO}`;
     const atual = folgas[key];
+
+    // Folga só pode ser cancelada até o próprio dia dela. Depois disso o
+    // plantão já passou e o registro vira histórico — mesma lógica da escala,
+    // que não reescreve o passado. Falta é exceção: admin e família precisam
+    // poder corrigir um registro feito por engano.
+    if (!ehFalta(atual) && dataISO < hojeISO) {
+      notificar('erro', `Esta folga era de ${formatarDataBR(dataISO)} e não pode mais ser cancelada.`);
+      return;
+    }
+
+    // Cancelar uma folga coberta desfaz o combinado de quem ia substituir.
+    if (!ehFalta(atual) && atual?.cobertoPor) {
+      const ok = await confirmar({
+        titulo: 'Cancelar folga que já tem cobertura',
+        mensagem: `${atual.cobertoPorNome} confirmou a cobertura de ${item.tecnicoNome} em ${formatarDataBR(dataISO)}. Cancelar a folga desfaz essa cobertura — avise as duas.`,
+        textoConfirmar: 'Cancelar folga',
+        destrutivo: true,
+      });
+      if (!ok) return;
+    }
+
     try {
       await deleteDoc(doc(db, 'folgas', key));
       setFolgas((prev) => { const n = { ...prev }; delete n[key]; return n; });
@@ -583,8 +524,37 @@ const Escala: React.FC = () => {
         )}
       </div>
 
+      {/* Abas: a escala em si e o acompanhamento dos relatórios de plantão */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+        {[
+          { id: 'escala', label: 'Escala', icon: Calendar },
+          { id: 'plantoes', label: 'Plantões', icon: CalendarCheck },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setAbaAtiva(tab.id as typeof abaAtiva)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium flex-1 justify-center transition-all ${
+              abaAtiva === tab.id ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <tab.icon size={15} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {abaAtiva === 'plantoes' && (
+        <div>
+          <p className="text-xs text-gray-500 mb-3">
+            Relatórios de plantão enviados e pendentes. Quem encerra o plantão é a técnica, na tela
+            <b> Encerrar Plantão</b>.
+          </p>
+          <CalendarioPlantoes escala={escala} folgas={folgas} trocas={trocas} />
+        </div>
+      )}
+
       {/* Legenda dos técnicos escalados hoje */}
-      {escalaVigente.length > 0 && (
+      {abaAtiva === 'escala' && escalaVigente.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {escalaVigente.map((e) => (
             <span key={e.id} className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${corPorId[tecnicoIdDe(e)]}`}>
@@ -597,6 +567,7 @@ const Escala: React.FC = () => {
 
       {/* No celular a célula mostra só as iniciais, então esta legenda explica
           o que cada cor significa. No desktop os rótulos aparecem por extenso. */}
+      {abaAtiva === 'escala' && (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-gray-500 sm:hidden">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> cobertura
@@ -609,8 +580,10 @@ const Escala: React.FC = () => {
         </span>
         <span className="text-gray-400">Toque no dia para ver os nomes.</span>
       </div>
+      )}
 
       {/* Calendário */}
+      {abaAtiva === 'escala' && (
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <button onClick={() => setRefMes(new Date(ano, mes - 1, 1))} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"><ChevronLeft size={18} /></button>
@@ -706,8 +679,9 @@ const Escala: React.FC = () => {
           </div>
         )}
       </div>
+      )}
 
-      {escalaVigente.length === 0 && !carregando && (
+      {abaAtiva === 'escala' && escalaVigente.length === 0 && !carregando && (
         <div className="text-center py-10 text-gray-400 bg-white rounded-xl border border-gray-100">
           <Calendar size={36} className="mx-auto mb-3 opacity-30" />
           <p className="text-sm">Nenhum técnico escalado ainda.</p>
@@ -953,11 +927,17 @@ const Escala: React.FC = () => {
                                       <button onClick={() => cancelarCobertura(folga)} className="text-[11px] text-gray-500 hover:text-red-600">Remover cobertura</button>
                                     )}
                                     {/* Cancelar falta segue a mesma regra de registrar,
-                                        senão a restrição não valeria de nada. */}
-                                    {folga && (!ehFalta(folga) || podeRegistrarFalta) && (
+                                        senão a restrição não valeria de nada.
+                                        Folga só até o próprio dia dela. */}
+                                    {folga && (ehFalta(folga) ? podeRegistrarFalta : diaSel >= hojeISO) && (
                                       <button onClick={() => removerAusencia(e, diaSel)} className="text-[11px] text-gray-500 hover:text-emerald-700">
                                         Cancelar {rotuloAusencia(folga).toLowerCase()}
                                       </button>
+                                    )}
+                                    {/* Explica a ausência do botão, em vez de ele
+                                        simplesmente sumir sem motivo aparente. */}
+                                    {folga && !ehFalta(folga) && diaSel < hojeISO && (
+                                      <span className="text-[11px] text-gray-400">Dia já passou</span>
                                     )}
                                   </div>
                                 </div>

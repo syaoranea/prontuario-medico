@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee, MessageSquare, UserX } from 'lucide-react';
+import { AlertTriangle, FileText, Pill, Calendar, ArrowRight, Coffee, MessageSquare, UserX, Repeat, CalendarX } from 'lucide-react';
 import { Agendamento } from '../../interface/interface';
 import { formatarDataBR } from '../../utils/datas';
 
@@ -22,12 +22,36 @@ export interface ObservacaoAlerta {
   itensComObservacao: number;
 }
 
+/** Tarefa esporádica da rotina que passou do prazo sem ser marcada. */
+export interface RotinaPendenteAlerta {
+  id: string;
+  descricao: string;
+  turno: 'manha' | 'noite';
+  periodicidade: number;
+  diasAtraso: number;
+  nuncaFeita: boolean;
+  vencimento: string | null;
+}
+
+/** Plantão que terminou, tinha gente escalada e não teve relatório enviado. */
+export interface PlantaoPendenteAlerta {
+  id: string;
+  data: string;
+  turno: 'diurno' | 'noturno';
+  quem: string;
+  diasAtraso: number;
+}
+
 interface AlertaWidgetProps {
   alertas: Agendamento[];
   folgas?: FolgaAlerta[];
   onFazerCobertura?: (folga: FolgaAlerta) => void;
   observacoes?: ObservacaoAlerta[];
   onVerObservacao?: (observacao: ObservacaoAlerta) => void;
+  rotinasPendentes?: RotinaPendenteAlerta[];
+  onVerRotina?: () => void;
+  plantoesPendentes?: PlantaoPendenteAlerta[];
+  onVerPlantoes?: () => void;
 }
 
 interface Alerta {
@@ -75,6 +99,10 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
   onFazerCobertura,
   observacoes,
   onVerObservacao,
+  rotinasPendentes,
+  onVerRotina,
+  plantoesPendentes,
+  onVerPlantoes,
   }) => {
 
   return (
@@ -86,6 +114,64 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
         </div>
         <button className="text-sm text-primary-600 hover:text-primary-700">Ver todos</button>
       </div>
+
+      {/* Plantões sem relatório enviado */}
+      {plantoesPendentes && plantoesPendentes.length > 0 && (
+        <div className="space-y-3 mb-3">
+          {plantoesPendentes.map((p) => (
+            <div key={p.id} className="p-4 border rounded-lg bg-red-50 border-red-100 flex items-start space-x-3">
+              <div className="p-2 rounded-full bg-red-100 text-red-600 shrink-0">
+                <CalendarX size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">Relatório de plantão pendente</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {formatarDataBR(p.data)} · {p.turno === 'noturno' ? 'Noturno' : 'Diurno'}
+                  {p.quem ? ` · ${p.quem}` : ''} · {p.diasAtraso} dia(s) sem envio
+                </p>
+              </div>
+              <button
+                onClick={() => onVerPlantoes?.()}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+              >
+                Ver
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tarefas esporádicas da rotina que passaram do prazo. Visível para
+          todos os papéis — é cobrança da casa inteira, não de uma pessoa. */}
+      {rotinasPendentes && rotinasPendentes.length > 0 && (
+        <div className="space-y-3 mb-3">
+          {rotinasPendentes.map((r) => (
+            <div key={r.id} className="p-4 border rounded-lg bg-red-50 border-red-100 flex items-start space-x-3">
+              <div className="p-2 rounded-full bg-red-100 text-red-600 shrink-0">
+                <Repeat size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">
+                  Rotina de {r.periodicidade} dias pendente
+                </p>
+                <p className="text-sm text-gray-700 mt-0.5">{r.descricao}</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {r.turno === 'noite' ? 'Turno da noite' : 'Turno da manhã'}
+                  {r.nuncaFeita
+                    ? ' · nunca realizada'
+                    : ` · ${r.diasAtraso} dia(s) de atraso${r.vencimento ? ` (venceu em ${formatarDataBR(r.vencimento)})` : ''}`}
+                </p>
+              </div>
+              <button
+                onClick={() => onVerRotina?.()}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary-600 text-white hover:bg-primary-700 transition-colors"
+              >
+                Ver rotina
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Observações deixadas pela técnica no checklist do plantão */}
       {observacoes && observacoes.length > 0 && (
@@ -189,7 +275,9 @@ const AlertasWidget: React.FC<AlertaWidgetProps> = ({
 
         {(!alertas || alertas.length === 0) ? (
           (!folgas || folgas.length === 0) &&
-          (!observacoes || observacoes.length === 0) && <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
+          (!observacoes || observacoes.length === 0) &&
+          (!rotinasPendentes || rotinasPendentes.length === 0) &&
+          (!plantoesPendentes || plantoesPendentes.length === 0) && <p className="text-sm text-gray-500">Nenhum alerta no momento 🎉</p>
         ) : (
           alertas.map((alerta) => (
             <div 

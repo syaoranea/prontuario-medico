@@ -5,7 +5,7 @@ import {
   Sun, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
   ChevronUp, Clock, X, RefreshCw, Heart, Activity, ScrollText,
   Phone, UserPlus, BadgeCheck, Trophy, Crown, Star, Zap, Gift, Sparkles, Flame, Flag, GripVertical,
-  MessageSquare
+  MessageSquare, Repeat
 } from 'lucide-react';
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
@@ -22,6 +22,9 @@ import { useAuditoria } from '../config/auditoria';
 import { useAuth } from '../config/auth/authContext';
 import { formatarDataHoraBR, formatarDataBR, paraISO } from '../utils/datas';
 import { normalizarNome } from '../utils/texto';
+import {
+  PERIODICIDADES, apareceNoChecklist, ehPeriodica, labelPeriodicidade, statusPeriodico,
+} from '../utils/rotina';
 
 // ── Seed data (routine from the patient's home care plan) ──────────────────────
 
@@ -267,6 +270,7 @@ const RotinaCuidados: React.FC = () => {
     horario: '',
     descricao: '',
     responsavel: 'tecnico' as RotinaItem['responsavel'],
+    periodicidade: 0,
   });
 
   // Feedback
@@ -675,13 +679,13 @@ const RotinaCuidados: React.FC = () => {
   // ── CRUD routine items ──────────────────────────────────────────────────────
   const abrirModalNovo = () => {
     setItemEditandoId(null);
-    setFormItem({ turno: turnoAtivo, secao: '', horario: '', descricao: '', responsavel: 'tecnico' });
+    setFormItem({ turno: turnoAtivo, secao: '', horario: '', descricao: '', responsavel: 'tecnico', periodicidade: 0 });
     setModalAberto(true);
   };
 
   const abrirModalEditar = (item: RotinaItem) => {
     setItemEditandoId(item.id);
-    setFormItem({ turno: item.turno, secao: item.secao, horario: item.horario, descricao: item.descricao, responsavel: item.responsavel });
+    setFormItem({ turno: item.turno, secao: item.secao, horario: item.horario, descricao: item.descricao, responsavel: item.responsavel, periodicidade: item.periodicidade ?? 0 });
     setModalAberto(true);
   };
 
@@ -695,7 +699,7 @@ const RotinaCuidados: React.FC = () => {
         await updateDoc(doc(db, 'rotina-items', itemEditandoId), { ...formItem });
         setItens(prev => prev.map(i => i.id === itemEditandoId ? { ...i, ...formItem } : i));
       } else {
-        const novoItem = { ...formItem, ordem: ordemMax + 1, ativo: true };
+        const novoItem = { ...formItem, ordem: ordemMax + 1, ativo: true, ultimaConclusao: '' };
         const ref = await addDoc(collection(db, 'rotina-items'), novoItem);
         setItens(prev => [...prev, { id: ref.id, ...novoItem }]);
       }
@@ -773,7 +777,12 @@ const RotinaCuidados: React.FC = () => {
     if (!auxiliarNome.trim()) { mostrarFeedback('erro', 'Informe o nome do técnico antes de salvar.'); return; }
     setSalvando(true);
     try {
-      const itensTurno = itens.filter(i => i.turno === turnoChecklist && i.ativo);
+      // Só entra no plantão o que estava de fato na lista do dia: tarefa
+      // esporádica que ainda não venceu não pode contar como não concluída e
+      // derrubar o percentual (e a pontuação) da técnica.
+      const itensTurno = itens.filter(
+        i => i.turno === turnoChecklist && i.ativo && apareceNoChecklist(i, dataChecklist)
+      );
       const itensSalvos: ItemExecucao[] = itensTurno.map(item => {
         const check = checkMap[item.id];
         const registro: ItemExecucao = {
@@ -805,6 +814,26 @@ const RotinaCuidados: React.FC = () => {
         setExecucaoAtualId(ref.id);
         registrar('criar', 'rotina-execucao', ref.id, resumoAud);
       }
+      // Carimba a última conclusão das tarefas esporádicas marcadas. É esse
+      // campo que reinicia a contagem dos 7/15/30 dias e tira o item do
+      // checklist e dos alertas. Nunca recua para uma data mais antiga, senão
+      // editar um plantão velho ressuscitaria a tarefa.
+      const periodicasFeitas = itensTurno.filter(
+        item => ehPeriodica(item)
+          && checkMap[item.id]?.concluido
+          && dataChecklist > (item.ultimaConclusao ?? '')
+      );
+      if (periodicasFeitas.length > 0) {
+        const lote = writeBatch(db);
+        periodicasFeitas.forEach(item =>
+          lote.update(doc(db, 'rotina-items', item.id), { ultimaConclusao: dataChecklist })
+        );
+        await lote.commit();
+        setItens(prev => sortItens(prev.map(i =>
+          periodicasFeitas.some(p => p.id === i.id) ? { ...i, ultimaConclusao: dataChecklist } : i
+        )));
+      }
+
       setChecklistSalvo(true);
       mostrarFeedback('ok', 'Checklist salvo com sucesso!');
     } catch {
@@ -860,8 +889,15 @@ const RotinaCuidados: React.FC = () => {
       .filter(o => o.geral || o.porItem.length > 0);
   }, [execucoesVisiveis, itens]);
 
-  const itensPorTurnoSecao = (turno: 'manha' | 'noite') => {
-    const filtrados = itens.filter(i => i.turno === turno && i.ativo);
+  /**
+   * `paraChecklist` tira as tarefas esporádicas que ainda não venceram — elas
+   * não podem pesar no percentual do plantão nem poluir a marcação do dia.
+   * Na aba Rotina passa false: lá a lista é o plano completo de cuidados.
+   */
+  const itensPorTurnoSecao = (turno: 'manha' | 'noite', paraChecklist = false) => {
+    const filtrados = itens.filter(
+      i => i.turno === turno && i.ativo && (!paraChecklist || apareceNoChecklist(i, dataChecklist || hoje()))
+    );
     const secoes: Record<string, RotinaItem[]> = {};
     filtrados.forEach(item => {
       if (!secoes[item.secao]) secoes[item.secao] = [];
@@ -871,10 +907,18 @@ const RotinaCuidados: React.FC = () => {
   };
 
   const progressoChecklist = () => {
-    const itensTurno = itens.filter(i => i.turno === turnoChecklist && i.ativo);
+    const itensTurno = itens.filter(
+      i => i.turno === turnoChecklist && i.ativo && apareceNoChecklist(i, dataChecklist || hoje())
+    );
     const concluidos = itensTurno.filter(i => checkMap[i.id]?.concluido).length;
     return { concluidos, total: itensTurno.length };
   };
+
+  /** Tarefas esporádicas vencidas, para o aviso no topo da aba Rotina. */
+  const periodicasVencidas = useMemo(
+    () => itens.filter(i => i.ativo && ehPeriodica(i) && statusPeriodico(i, hoje()).vencida),
+    [itens]
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -952,6 +996,35 @@ const RotinaCuidados: React.FC = () => {
       {/* ── ABA: ROTINA ─────────────────────────────────────────────────── */}
       {abaAtiva === 'rotina' && (
         <div>
+          {/* Tarefas esporádicas vencidas — ficam aqui até alguém marcar no checklist */}
+          {periodicasVencidas.length > 0 && (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3">
+              <p className="text-sm font-semibold text-red-700 flex items-center gap-1.5 mb-1.5">
+                <Repeat size={15} />
+                {periodicasVencidas.length === 1 ? 'Tarefa esporádica pendente' : `${periodicasVencidas.length} tarefas esporádicas pendentes`}
+              </p>
+              <ul className="space-y-1">
+                {periodicasVencidas.map(item => {
+                  const st = statusPeriodico(item, hoje());
+                  return (
+                    <li key={item.id} className="text-xs text-gray-700 flex items-start gap-1.5">
+                      <span className="text-red-500 mt-0.5">•</span>
+                      <span>
+                        {item.descricao}
+                        <span className="text-gray-500">
+                          {' '}— {TURNO_CONFIG[item.turno].label}
+                          {st.nuncaFeita
+                            ? ' · nunca realizada'
+                            : st.diasAtraso > 0 ? ` · ${st.diasAtraso} dia(s) de atraso` : ' · vence hoje'}
+                        </span>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
           {/* Legenda */}
           <div className="flex flex-wrap gap-2 mb-4">
             {Object.entries(RESPONSAVEL_CONFIG).map(([k, v]) => (
@@ -1017,6 +1090,23 @@ const RotinaCuidados: React.FC = () => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1 flex-wrap">
                               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${resp.color}`}>{resp.label}</span>
+                              {ehPeriodica(item) && (() => {
+                                const st = statusPeriodico(item, hoje());
+                                return (
+                                  <span
+                                    className={`text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                      st.vencida ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'
+                                    }`}
+                                    title={st.vencimento ? `Vence em ${formatarData(st.vencimento)}` : 'Ainda não foi feita nenhuma vez'}
+                                  >
+                                    <Repeat size={11} />
+                                    {labelPeriodicidade(item.periodicidade)}
+                                    {st.vencida && (st.nuncaFeita
+                                      ? ' · pendente'
+                                      : st.diasAtraso > 0 ? ` · ${st.diasAtraso}d de atraso` : ' · vence hoje')}
+                                  </span>
+                                );
+                              })()}
                             </div>
                             <p className="text-sm text-gray-700 leading-relaxed">{item.descricao}</p>
                           </div>
@@ -1154,7 +1244,7 @@ const RotinaCuidados: React.FC = () => {
             </div>
           ) : (
             <>
-              {Object.entries(itensPorTurnoSecao(turnoChecklist)).map(([secao, secItems]) => (
+              {Object.entries(itensPorTurnoSecao(turnoChecklist, true)).map(([secao, secItems]) => (
                 <div key={secao} className="mb-4">
                   <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{secao}</h3>
                   <div className="bg-white rounded-xl border border-gray-100 divide-y divide-gray-50">
@@ -1193,6 +1283,23 @@ const RotinaCuidados: React.FC = () => {
                               <div className="flex items-center gap-2 flex-wrap mb-1">
                                 <span className="text-xs font-mono text-gray-400">{item.horario}</span>
                                 <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${resp.color}`}>{resp.label}</span>
+                              {ehPeriodica(item) && (() => {
+                                const st = statusPeriodico(item, hoje());
+                                return (
+                                  <span
+                                    className={`text-xs font-medium px-2 py-0.5 rounded-full inline-flex items-center gap-1 ${
+                                      st.vencida ? 'bg-red-100 text-red-700' : 'bg-violet-100 text-violet-700'
+                                    }`}
+                                    title={st.vencimento ? `Vence em ${formatarData(st.vencimento)}` : 'Ainda não foi feita nenhuma vez'}
+                                  >
+                                    <Repeat size={11} />
+                                    {labelPeriodicidade(item.periodicidade)}
+                                    {st.vencida && (st.nuncaFeita
+                                      ? ' · pendente'
+                                      : st.diasAtraso > 0 ? ` · ${st.diasAtraso}d de atraso` : ' · vence hoje')}
+                                  </span>
+                                );
+                              })()}
                                 {check.concluido && check.horarioConcluido && (
                                   <span className="text-xs text-green-600 flex items-center gap-1">
                                     <Clock size={10} /> Concluído às {check.horarioConcluido}
@@ -2066,6 +2173,25 @@ const RotinaCuidados: React.FC = () => {
                     <label className="text-xs font-medium text-gray-500 block mb-1">Descrição do item</label>
                     <textarea rows={3} placeholder="Descreva a tarefa ou cuidado a ser realizado..." value={formItem.descricao} onChange={e => setFormItem(p => ({ ...p, descricao: e.target.value }))}
                       className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-300" />
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-medium text-gray-500 block mb-1">Repetição</label>
+                    <select
+                      value={formItem.periodicidade}
+                      onChange={e => setFormItem(p => ({ ...p, periodicidade: Number(e.target.value) }))}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                    >
+                      {PERIODICIDADES.map(p => (
+                        <option key={p.valor} value={p.valor}>{p.label}</option>
+                      ))}
+                    </select>
+                    {formItem.periodicidade > 0 && (
+                      <p className="text-[11px] text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-2.5 py-1.5 mt-2">
+                        Tarefa esporádica: só aparece no checklist a cada {formItem.periodicidade} dias e fica
+                        visível até ser marcada. Se passar do prazo, vira alerta no Dashboard para todos.
+                      </p>
+                    )}
                   </div>
 
                   <div>

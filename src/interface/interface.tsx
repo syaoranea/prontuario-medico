@@ -80,6 +80,13 @@ export interface RotinaItem {
   responsavel: 'tecnico' | 'enfermeiro' | 'paciente' | 'fisioterapeuta' | 'urgencia';
   ordem: number;
   ativo: boolean;
+  /**
+   * Rotina esporádica: de quantos em quantos dias a tarefa se repete
+   * (7, 15 ou 30). 0 ou ausente = tarefa de todo dia.
+   */
+  periodicidade?: number;
+  /** Data (YYYY-MM-DD) do último plantão em que a tarefa foi concluída. */
+  ultimaConclusao?: string;
 }
 
 export interface ItemExecucao {
@@ -87,6 +94,26 @@ export interface ItemExecucao {
   concluido: boolean;
   observacao: string;
   horarioConcluido?: string;
+}
+
+/**
+ * Registro de um plantão encerrado. O id é `{data}_{turno}`, então um plantão
+ * só pode ser encerrado uma vez — reenviar substitui o registro em vez de
+ * duplicar a linha do calendário.
+ */
+export interface PlantaoEncerrado {
+  id: string;
+  data: string; // ISO (YYYY-MM-DD)
+  turno: 'diurno' | 'noturno';
+  tecnicoNome: string;
+  /** uid de quem encerrou (membrosEquipe). */
+  encerradoPor: string;
+  encerradoEm: string; // ISO completo
+  /** Caminhos dos anexos no S3, na ordem em que foram enviados. */
+  anexos: string[];
+  /** Encerrou um plantão que, pela escala, não era dele. */
+  foraDaEscala?: boolean;
+  observacao?: string;
 }
 
 /** Item de consumo do home care (sonda, luva, pró-pé, soro...). */

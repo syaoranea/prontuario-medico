@@ -3,7 +3,7 @@ import { CalendarCheck, Heart, TrendingUp, ClipboardList} from 'lucide-react';
 import MetricasWidget from '../components/widgets/MetricasWidget';
 import ProximosAgendamentosWidget from '../components/widgets/ProximosAgendamentosWidget';
 import MedicamentosWidget from '../components/widgets/MedicamentosWidget';
-import AlertasWidget, { FolgaAlerta, ObservacaoAlerta } from '../components/widgets/AlertasWidget';
+import AlertasWidget, { FolgaAlerta, ObservacaoAlerta, RotinaPendenteAlerta, PlantaoPendenteAlerta } from '../components/widgets/AlertasWidget';
 import ParabensWidget, { ParabensPlantao } from '../components/widgets/ParabensWidget';
 import { useNavigate } from 'react-router-dom';
 import { useUsuario } from '../config/bd/userContext';
@@ -11,9 +11,12 @@ import { useFeedback } from '../components/FeedbackProvider';
 import { useAuth } from '../config/auth/authContext';
 import { ordinalData, formatarDataExtenso, dataFimVigente, faltaMenosDeUmMes, hojeISO, paraISO } from '../utils/datas';
 import { normalizarNome } from '../utils/texto';
+import { geraAlerta, statusPeriodico } from '../utils/rotina';
+import { EscalaItem, Folga, TrocaPlantao, isoDe } from '../utils/escala';
+import { plantoesPendentes as calcularPendentes } from '../utils/plantao';
 import { collection, query, where, orderBy, getDocs, Timestamp, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { Agendamento, Medicamento, Metrica, MetricaData, RotinaExecucao } from '../interface/interface';
+import { Agendamento, Medicamento, Metrica, MetricaData, RotinaExecucao, RotinaItem } from '../interface/interface';
 
 export const reagendarAgendamento = async (
   agendamentoId: string,
@@ -51,6 +54,8 @@ const Dashboard: React.FC = () => {
   const [folgasCobertura, setFolgasCobertura] = useState<FolgaAlerta[]>([]);
   const [observacoesPlantao, setObservacoesPlantao] = useState<ObservacaoAlerta[]>([]);
   const [parabensPlantao, setParabensPlantao] = useState<ParabensPlantao[]>([]);
+  const [rotinasPendentes, setRotinasPendentes] = useState<RotinaPendenteAlerta[]>([]);
+  const [plantoesSemRelatorio, setPlantoesSemRelatorio] = useState<PlantaoPendenteAlerta[]>([]);
   const { notificar } = useFeedback();
   const { perfil, temPapel } = useAuth();
   const navigate = useNavigate();
@@ -62,6 +67,8 @@ const Dashboard: React.FC = () => {
     buscarFolgasCobertura();
     buscarObservacoesPlantao();
     buscarParabensPlantao();
+    buscarRotinasPendentes();
+    buscarPlantoesPendentes();
     const carregar = async () => {
       const { total, pendentes } = await buscarPendentes();
       setTotalPendentes(total);
@@ -221,6 +228,78 @@ const Dashboard: React.FC = () => {
       setParabensPlantao(lista);
     } catch (error) {
       console.error('Erro ao buscar plantões 100%:', error);
+    }
+  };
+
+  // Tarefas esporádicas da rotina (7/15/30 dias) que passaram do prazo sem
+  // ninguém marcar no checklist. Alerta para TODOS os papéis: é pendência da
+  // casa, e a tarefa continua no checklist até ser concluída.
+  const buscarRotinasPendentes = async () => {
+    try {
+      const snapshot = await getDocs(collection(db, 'rotina-items'));
+      const hoje = hojeISO();
+      const lista: RotinaPendenteAlerta[] = snapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<RotinaItem, 'id'>) }))
+        .filter((item) => item.ativo !== false && geraAlerta(item, hoje))
+        .map((item) => {
+          const st = statusPeriodico(item, hoje);
+          return {
+            id: item.id,
+            descricao: item.descricao,
+            turno: item.turno,
+            periodicidade: item.periodicidade ?? 0,
+            diasAtraso: st.diasAtraso,
+            nuncaFeita: st.nuncaFeita,
+            vencimento: st.vencimento,
+          };
+        })
+        .sort((a, b) => b.diasAtraso - a.diasAtraso);
+      setRotinasPendentes(lista);
+    } catch (error) {
+      console.error('Erro ao buscar rotinas esporádicas pendentes:', error);
+    }
+  };
+
+  // Plantões que terminaram, tinham gente escalada e não tiveram relatório.
+  // Só conta o que já passou de 1 dia: no próprio dia a técnica ainda pode
+  // estar a caminho de enviar. Janela de 30 dias para não varrer o ano todo.
+  const buscarPlantoesPendentes = async () => {
+    try {
+      const [es, fs, trs, pes] = await Promise.all([
+        getDocs(collection(db, 'escala')),
+        getDocs(collection(db, 'folgas')),
+        getDocs(collection(db, 'trocas')),
+        getDocs(collection(db, 'plantoes-encerrados')),
+      ]);
+
+      const mapaFolgas: Record<string, Folga> = {};
+      fs.docs.forEach((d) => {
+        const x = d.data() as Folga;
+        if (x.tecnicoId && x.data) mapaFolgas[`${x.tecnicoId}_${x.data}`] = { ...x, turno: x.turno || 'diurno' };
+      });
+
+      const agora = new Date();
+      const inicio = new Date(agora);
+      inicio.setDate(inicio.getDate() - 30);
+
+      const lista = calcularPendentes(
+        {
+          escala: es.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<EscalaItem, 'id'>) })),
+          folgas: mapaFolgas,
+          trocas: trs.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<TrocaPlantao, 'id'>) })),
+          encerrados: new Set(pes.docs.map((d) => d.id)),
+        },
+        isoDe(inicio.getFullYear(), inicio.getMonth(), inicio.getDate()),
+        isoDe(agora.getFullYear(), agora.getMonth(), agora.getDate()),
+        agora
+      )
+        .filter((p) => p.diasAtraso >= 1)
+        .sort((a, b) => b.diasAtraso - a.diasAtraso)
+        .map((p) => ({ id: `${p.data}_${p.turno}`, data: p.data, turno: p.turno, quem: p.quem, diasAtraso: p.diasAtraso }));
+
+      setPlantoesSemRelatorio(lista);
+    } catch (error) {
+      console.error('Erro ao buscar plantões sem relatório:', error);
     }
   };
 
@@ -567,6 +646,10 @@ const salvarReagendamento = async () => {
           onFazerCobertura={() => navigate('/escala')}
           observacoes={observacoesPlantao}
           onVerObservacao={() => navigate('/rotina', { state: { aba: 'observacoes' } })}
+          rotinasPendentes={rotinasPendentes}
+          onVerRotina={() => navigate('/rotina')}
+          plantoesPendentes={plantoesSemRelatorio}
+          onVerPlantoes={() => navigate('/escala')}
         />
       </div>
     </div>
