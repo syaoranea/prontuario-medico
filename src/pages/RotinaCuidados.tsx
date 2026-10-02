@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, Fragment } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ClipboardList, CheckSquare, History, Plus, Edit2, Trash2, Save,
   Sun, Moon, AlertTriangle, User, Stethoscope, ChevronDown,
@@ -190,7 +190,8 @@ const nivelDe = (total: number) => {
 const RotinaCuidados: React.FC = () => {
   const { confirmar } = useConfirm();
   const { registrar } = useAuditoria();
-  const { temPapel, perfil } = useAuth();
+  const { user, temPapel, perfil } = useAuth();
+  const navigate = useNavigate();
   // Quem chega pelo card de observação no Dashboard já cai na aba Histórico.
   const abaInicial = (useLocation().state as { aba?: string } | null)?.aba;
   const [abaAtiva, setAbaAtiva] = useState<'rotina' | 'checklist' | 'historico' | 'observacoes' | 'tecnicos' | 'gamificacao'>(
@@ -209,6 +210,7 @@ const RotinaCuidados: React.FC = () => {
 
   // Filtro da aba Observações por técnico (independente do filtro do histórico)
   const [filtroTecnicoObs, setFiltroTecnicoObs] = useState<string>('todos');
+  const [marcandoLidas, setMarcandoLidas] = useState(false);
 
   // Placar: sub-abas e avaliação por tarefa
   const [abaPlacar, setAbaPlacar] = useState<'ranking' | 'avaliacao'>('ranking');
@@ -888,6 +890,41 @@ const RotinaCuidados: React.FC = () => {
       })
       .filter(o => o.geral || o.porItem.length > 0);
   }, [execucoesVisiveis, itens]);
+
+  /** Plantões com observação que esta pessoa ainda não marcou como lidos. */
+  const naoLidas = useMemo(
+    () => (user ? observacoesRegistradas.filter(o => !o.exec.lidaPor?.[user.uid]) : []),
+    [observacoesRegistradas, user]
+  );
+
+  /**
+   * Botão único da aba: dá baixa em tudo que está pendente para esta pessoa e
+   * volta ao Dashboard na altura dos alertas, para ela ver que o card sumiu.
+   * A baixa é por uid — não some para as outras pessoas.
+   */
+  const marcarTodasLidas = async () => {
+    if (!user || naoLidas.length === 0) return;
+    setMarcandoLidas(true);
+    const agora = new Date().toISOString();
+    try {
+      const lote = writeBatch(db);
+      naoLidas.forEach(o =>
+        lote.update(doc(db, 'rotina-execucoes', o.exec.id), { [`lidaPor.${user.uid}`]: agora })
+      );
+      await lote.commit();
+      setExecucoes(prev => prev.map(e =>
+        naoLidas.some(o => o.exec.id === e.id)
+          ? { ...e, lidaPor: { ...(e.lidaPor ?? {}), [user.uid]: agora } }
+          : e
+      ));
+      navigate('/', { state: { irParaAlertas: true } });
+    } catch (err) {
+      console.error('Erro ao marcar observações como lidas:', err);
+      mostrarFeedback('erro', 'Não foi possível marcar como lidas.');
+    } finally {
+      setMarcandoLidas(false);
+    }
+  };
 
   /**
    * `paraChecklist` tira as tarefas esporádicas que ainda não venceram — elas
@@ -1750,7 +1787,8 @@ const RotinaCuidados: React.FC = () => {
 
       {/* ── ABA: OBSERVAÇÕES ────────────────────────────────────────────── */}
       {abaAtiva === 'observacoes' && (
-        <div>
+        // Espaço extra embaixo para a barra fixa não cobrir o último card.
+        <div className={naoLidas.length > 0 ? 'pb-24' : ''}>
           {carregandoExec ? (
             <div className="flex items-center justify-center py-12 text-gray-400">
               <RefreshCw size={20} className="animate-spin mr-2" /> Carregando observações...
@@ -1863,6 +1901,26 @@ const RotinaCuidados: React.FC = () => {
             </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Botão único da aba, fixo no rodapé */}
+      {abaAtiva === 'observacoes' && naoLidas.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 p-4 bg-gradient-to-t from-white via-white to-transparent">
+          <div className="max-w-5xl mx-auto md:pl-64">
+            <button
+              onClick={marcarTodasLidas}
+              disabled={marcandoLidas}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-primary-600 text-white font-semibold shadow-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+            >
+              {marcandoLidas
+                ? <><RefreshCw size={18} className="animate-spin" /> Marcando…</>
+                : <><CheckSquare size={18} /> Marcar como lido{naoLidas.length > 1 ? ` (${naoLidas.length})` : ''}</>}
+            </button>
+            <p className="text-[11px] text-gray-400 text-center mt-1.5">
+              Some do seu Dashboard. As outras pessoas continuam vendo o aviso.
+            </p>
+          </div>
         </div>
       )}
 

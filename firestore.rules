@@ -91,6 +91,11 @@ service cloud.firestore {
     match /rotina-execucoes/{doc} {
       allow read: if membroAtivo();
       allow write: if equipeClinica();
+      // Dar baixa no alerta de observação é um carimbo pessoal, não edição do
+      // plantão: qualquer membro ativo pode (inclusive família, que só lê o
+      // resto), desde que a escrita mexa SOMENTE no campo `lidaPor`.
+      allow update: if membroAtivo()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lidaPor']);
     }
     match /tecnicos/{doc} {
       allow read: if membroAtivo();

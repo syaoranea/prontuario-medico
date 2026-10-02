@@ -163,4 +163,10 @@ export interface RotinaExecucao {
   atualizadoEm: string;
   /** Quando a técnica fechou o card de parabéns do plantão 100% (ISO). */
   parabensVistoEm?: string;
+  /**
+   * Quem já deu baixa no alerta de observação deste plantão: uid → data ISO.
+   * É por pessoa de propósito — a observação é lida por admin, família e
+   * gestão, e uma não pode fazer o aviso sumir para as outras.
+   */
+  lidaPor?: Record<string, string>;
 }

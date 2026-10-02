@@ -5,7 +5,7 @@ import ProximosAgendamentosWidget from '../components/widgets/ProximosAgendament
 import MedicamentosWidget from '../components/widgets/MedicamentosWidget';
 import AlertasWidget, { FolgaAlerta, ObservacaoAlerta, RotinaPendenteAlerta, PlantaoPendenteAlerta } from '../components/widgets/AlertasWidget';
 import ParabensWidget, { ParabensPlantao } from '../components/widgets/ParabensWidget';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useUsuario } from '../config/bd/userContext';
 import { useFeedback } from '../components/FeedbackProvider';
 import { useAuth } from '../config/auth/authContext';
@@ -57,8 +57,20 @@ const Dashboard: React.FC = () => {
   const [rotinasPendentes, setRotinasPendentes] = useState<RotinaPendenteAlerta[]>([]);
   const [plantoesSemRelatorio, setPlantoesSemRelatorio] = useState<PlantaoPendenteAlerta[]>([]);
   const { notificar } = useFeedback();
-  const { perfil, temPapel } = useAuth();
+  const { user, perfil, temPapel } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Quem acabou de marcar as observações como lidas volta para cá: rola até os
+  // alertas, no fim da página, para ver que o card realmente sumiu.
+  useEffect(() => {
+    if (!(location.state as { irParaAlertas?: boolean } | null)?.irParaAlertas) return;
+    const t = setTimeout(
+      () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }),
+      250
+    );
+    return () => clearTimeout(t);
+  }, [location.state]);
 
   useEffect(() => {
     buscarAgendamentos();
@@ -164,11 +176,12 @@ const Dashboard: React.FC = () => {
         query(collection(db, 'rotina-execucoes'), orderBy('data', 'desc'), limit(30))
       );
 
-      // Janela de 7 dias: alerta antigo vira ruído, o histórico completo fica na
-      // aba Histórico da Rotina Home Care.
+      // Quem manda no card agora é o "marcar como lida": ele fica até a pessoa
+      // dar baixa. A janela de 30 dias é só um teto, para um registro antigo
+      // esquecido não ficar preso no Dashboard para sempre.
       const limite = new Date();
       limite.setHours(0, 0, 0, 0);
-      limite.setDate(limite.getDate() - 6);
+      limite.setDate(limite.getDate() - 29);
       const limiteStr = paraISO(limite);
 
       const vejoTodas = temPapel(['admin', 'familia', 'enfermeiro', 'medico']);
@@ -178,6 +191,8 @@ const Dashboard: React.FC = () => {
         .map((d) => ({ id: d.id, ...(d.data() as Omit<RotinaExecucao, 'id'>) }))
         .filter((exec) => paraISO(exec.data) >= limiteStr)
         .filter((exec) => vejoTodas || (!!meuNome && normalizarNome(exec.auxiliar) === meuNome))
+        // Cada pessoa tem a própria baixa: o uid dela no mapa `lidaPor`.
+        .filter((exec) => !(user && exec.lidaPor?.[user.uid]))
         .map((exec) => ({
           id: exec.id,
           tecnicoNome: exec.auxiliar ?? '',
